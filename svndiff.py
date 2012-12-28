@@ -4,7 +4,7 @@ import re
 import copy
 from optparse import OptionParser 
 from subprocess import *
-from tornado import template
+from tornado import template, escape
 
 def is_win64():
     return (os.environ.get('PROCESSOR_ARCHITEW6432', None) is not None)
@@ -60,6 +60,9 @@ class SvnDiff(object):
         self.src_dir = src_dir
 
     def status(self):
+        self.files = []
+        self.newfiles = []
+        self.removedfiles = []
         for line in self.svn_cmd.run(["status", self.src_dir]):
             try:
                 stat,fname = line.split()
@@ -73,14 +76,8 @@ class SvnDiff(object):
                 pass
 
     def html_escape(self, value):
-        def to_basestring(value):
-            if isinstance(value, (basestring, type(None))):
-                return value
-            assert isinstance(value, bytes)
-            return value.decode("utf-8")
-
         return self.ESCAPE_RE.sub(lambda m: self.ESCAPE_DICT[m.group(0)],
-                to_basestring(value))
+                escape.to_basestring(value))
 
     def display_fname(self, fname):
         return fname.replace('/', os.sep).replace(self.src_dir+os.sep, '').replace(os.sep, '/')

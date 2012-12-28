@@ -30,8 +30,8 @@ class MainWindow(QDialog):
             [ ('', QLabel(u'Source Root Path')), ('txtSrcDir', QLineEdit(self.conf('srcdir'))) ],
             [ ('', QLabel(u'Bug ID          ')), ('txtBugId', QLineEdit('')), None ],
             [ None, ('btnSaveConfig', QPushButton(u'Save Config')),
-                    ('btnReview', QPushButton(u'Review')),
-                    ('btnSubmit', QPushButton(u'Submit')),
+                    ('btnGetStatus', QPushButton(u'Get Status')),
+                    ('btnMakeDiff', QPushButton(u'Make Diff')),
                     ('btnExit', QPushButton(u'Exit')), None ],
             [ ('lstResult', QListWidget()) ],
             [ ('statusBar', QStatusBar(self)) ],
@@ -40,11 +40,11 @@ class MainWindow(QDialog):
         if self.lt.txtSvnCmd.text() == "":
             self.lt.txtSvnCmd.setText(self.sd.svn_cmd.path)
 
-        self.setFixedSize(500, 500)
+        self.setFixedSize(650, 500)
         self.lt.txtPassword.setEchoMode(QLineEdit.Password)
         #self.lt.lstResult.setMaximumHeight(300)
-        self.pb = QProgressBar(self.lt.statusBar)
-        self.lt.statusBar.addPermanentWidget(self.pb)
+        #self.pb = QProgressBar(self.lt.statusBar)
+        #self.lt.statusBar.addPermanentWidget(self.pb)
 
         self.setWindowTitle('Svn Diff Tool')
         self.setWindowIcon(QIcon('./logo.png'))
@@ -52,33 +52,27 @@ class MainWindow(QDialog):
         self.lt.btnSaveConfig.clicked.connect(self.save_config)
         self.lt.btnExit.clicked.connect(self.close)
 
+        self.statusIcons = {
+                'A': QIcon('fileadd.ico'),
+                'M': QIcon('filemodify.ico'),
+                'D': QIcon('filedelete.ico'),
+                }
         self.init_task()
 
     def conf(self, key, value=None):
         if value is not None:
-        	self.config[key] = value
+            self.config[key] = value
         return self.config.get(key, '')
 
     def init_task(self):
         self.BackTasks = {
-            'btnReview': {
-                'task': Task(self.review_task),
-                'subscribers': [self.show_review_result()],
-                #'subscribers': [self.update_status()],
-                },
-            'btnSubmit': {
-                'task': Task(self.submit_task),
-                'subscribers': [self.update_status()],
-                },
+            'btnGetStatus': Task(self.get_status, [self.show_status_result]),
+            'btnMakeDiff': Task(self.make_diff, [self.show_diff_result]),
             }
 
         self.worker = Worker()
 
-        for btn, t in self.BackTasks.items():
-            task = t['task']
-            for s in t['subscribers']:
-                sub = Subscriber(s)
-                sub.subscribe(task)
+        for btn, task in self.BackTasks.items():
             self.worker.add(task)
             self.lt[btn].clicked.connect(task.run)
 
@@ -98,59 +92,62 @@ class MainWindow(QDialog):
         pk.dump(self.config, open(self.config_file, 'w'))
         pass
 
-    def review_task(self):
-        self.lt.btnReview.setDisabled(True)
-        yield ('INFO', "Getting svn status, please wait ...")
+    def get_status(self):
+        self.lt.btnGetStatus.setDisabled(True)
+        yield ('INFO', u"Getting svn status, please wait ...")
         self.sd.set_src_dir(self.lt.txtSrcDir.text()) 
         try:
             self.sd.status()
             for f in self.sd.files:
-        	    yield ('M', f)
+                yield ('M', self.sd.display_fname(f))
             for f in self.sd.newfiles:
-        	    yield ('A', f)
+                yield ('A', self.sd.display_fname(f))
             for f in self.sd.removedfiles:
-        	    yield ('D', f)
-            yield ('INFO', "Getting svn status done") 
+                yield ('D', self.sd.display_fname(f))
+            yield ('INFO', u"Getting svn status done") 
         except Exception as ex:
-            yield('ERROR', ex)
+            yield('ERROR', unicode(ex))
         finally:
-            self.lt.btnReview.setDisabled(False)
+            self.lt.btnGetStatus.setDisabled(False)
 
-    def submit_task(self):
-        self.lt['btnSubmit'].setDisabled(True)
-        yield "Waiting for submit"
-        time.sleep(1)
-        yield "Waiting for submit ."
-        time.sleep(1)
-        yield "Waiting for submit .."
-        time.sleep(1)
-        yield "Waiting for submit ..."
-        time.sleep(1)
-        yield "Submit done"
-        self.lt['btnSubmit'].setDisabled(False)
-
-    @coroutine
-    def show_review_result(self):
+    def make_diff(self):
+        self.lt.btnMakeDiff.setDisabled(True)
         try:
-            while True:
-                m = (yield)
-                if m[0] in ('INFO', 'WARN', 'ERROR'):
-                    self.lt.statusBar.showMessage(m[1])
-                else:
-                    item = QListWidgetItem(m[0] + " " + m[1])
-                    item.setCheckState(Qt.Unchecked)
-                    self.lt.lstResult.addItem(item)
-        except GeneratorExit:
-            print "show_handler done"
+            for f in self.sd.files:
+                yield u'Making diff for {} ...'.format(self.sd.display_fname(f))
+                args = [ "diff", f, "--diff-cmd=diffcmd.exe", "-x", "-u -l10000" ]
+                self.sd.gen_diff_file(args, ' '+f)
+            yield u'Making diff for All-diffs ...'
+            args = [ "diff", self.lt.txtSrcDir.text() ]
+            self.sd.gen_diff_file(args, 'All-diffs')
+            yield u'Go to hdiff to check files'
+        except Exception as ex:
+            yield unicode(ex)
+        finally:
+            self.lt.btnMakeDiff.setDisabled(False)
 
-    @coroutine
-    def update_status(self):
-        try:
-            while True:
-                msg = (yield)
-                self.lt.statusBar.showMessage(msg)
-        except GeneratorExit:
-            print "show_handler done"
+    def show_status_result(self, n=None, msg=None):
+        if n == 0:
+            self.lt.lstResult.clear()
+        elif n is None:
+        	return
+        if msg[0] in ('INFO', 'WARN', 'ERROR'):
+        	self.update_status(msg[1])
+        else:
+            item = QListWidgetItem(self.statusIcons[msg[0]], msg[1])
+            item.setCheckState(Qt.Checked)
+            self.lt.lstResult.addItem(item)
+
+    def show_diff_result(self, n=None, msg=None):
+        if n == 0:
+            self.lt.lstResult.clear()
+        elif n is None:
+        	return
+        item = QListWidgetItem(msg)
+        self.lt.lstResult.addItem(item)
+
+    def update_status(self, msg=''):
+        self.lt.statusBar.showMessage(msg)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
