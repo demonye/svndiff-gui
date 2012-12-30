@@ -6,6 +6,8 @@ from optparse import OptionParser
 from subprocess import *
 from tornado import template, escape
 
+from yelib.util import force_rmdir
+
 def is_win64():
     return (os.environ.get('PROCESSOR_ARCHITEW6432', None) is not None)
 def exec_cmd(*args):
@@ -31,7 +33,7 @@ class SvnCmd(object):
                             _winreg.KEY_WOW64_64KEY or
                             _winreg.KEY_WOW64_32KEY)
                         )
-                self._path = os.path.join(_winreg.QueryValueEx(reg, "Location")[0], "svn.exe")
+                self._path = os.path.join(_winreg.QueryValueEx(reg, "Location")[0], "svn")
             except Exception as err:
                 print err
         return self._path
@@ -182,8 +184,11 @@ if __name__ == "__main__":
     print("files =  {0}".format('  '.join([sd.display_fname(v) for v in sd.files])))
     print("newfiles =  {0}".format('  '.join([sd.display_fname(v) for v in sd.newfiles])))
 
+    force_rmdir(save_dir)
+    os.makedirs(save_dir)
+
     for f in sd.files:
-        args = [ "diff", f, "--diff-cmd=diffcmd.exe", "-x", "-u -l10000" ]
+        args = [ "diff", f, "--diff-cmd=diff", "-x", "-U10000" ]
         sd.gen_diff_file(args, ' '+f)
 
     args = [ "diff", src_dir ]

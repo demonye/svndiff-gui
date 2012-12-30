@@ -85,11 +85,15 @@ class Worker(WorkThread):
         try:
             i = 0
             t = self._todo_list.get(timeout=0.1)
-            for msg in t.func(*t.args, **t.kwargs):
-                #self.deliver.send(t.id, msg)
+            try:
+                for msg in t.func(*t.args, **t.kwargs):
+                    #self.deliver.send(t.id, msg)
+                    for hdlr in t.handlers:
+                        invoke_in_main_thread(hdlr, i, msg)
+                    i += 1
+            except Exception as ex:
                 for hdlr in t.handlers:
-                    invoke_in_main_thread(hdlr, i, msg)
-                i += 1
+                    invoke_in_main_thread(hdlr, i, ('ERROR', unicode(ex)))
             for hdlr in t.handlers:
                 invoke_in_main_thread(hdlr)
             #self.deliver.send(t.id, None)

@@ -1,3 +1,4 @@
+import os
 from threading import Thread
 
 def singleton(cls):
@@ -22,3 +23,14 @@ def coroutine(func):
         return cr
     return start
 
+def force_rmdir(dirname):
+    dirarr = []
+    for root,dirs,files in os.walk(dirname):
+        dirarr.append(root)
+        for f in files:
+            os.remove(os.path.join(root, f))
+    while True:
+        try:
+            os.rmdir(dirarr.pop())
+        except IndexError:
+            break

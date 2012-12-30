@@ -29,12 +29,6 @@ nosetests.xml
 # Translations
 *.mo
 
-# pyinstaller
-*.exe
-
-# Diff result
-hdiff
-
 # Mr Developer
 #.mr.developer.cfg
 #.project
@@ -42,6 +36,9 @@ hdiff
 
 # vim backup
 *~
-
-# svndiff-gui
+# pyinstaller
+*.exe
+# svndiff config files
 settings
+sshkey
+hdiff
