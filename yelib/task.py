@@ -94,6 +94,7 @@ class Worker(WorkThread):
             except Exception as ex:
                 for hdlr in t.handlers:
                     invoke_in_main_thread(hdlr, i, ('ERROR', unicode(ex)))
+                raise
             for hdlr in t.handlers:
                 invoke_in_main_thread(hdlr)
             #self.deliver.send(t.id, None)

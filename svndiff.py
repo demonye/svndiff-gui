@@ -11,7 +11,7 @@ from yelib.util import force_rmdir
 def is_win64():
     return (os.environ.get('PROCESSOR_ARCHITEW6432', None) is not None)
 def exec_cmd(*args):
-    p = Popen(args, stdout=PIPE, stderr=PIPE).communicate()
+    p = Popen(args, shell=True, stdout=PIPE, stderr=PIPE).communicate()
     if len(p[1]) > 0:
         raise Exception(p[1])
     return p[0]

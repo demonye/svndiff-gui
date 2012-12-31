@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
 """ Command line interface to difflib.py providing diffs in four formats:
 
@@ -24,6 +25,7 @@ def main():
     usage = "usage: %prog [options] fromfile tofile"
     parser = optparse.OptionParser(usage)
     parser.add_option("-U", "--unified", dest="NUM", type="int", default=3, help='output NUM (default 3) lines of unified context'),
+    parser.add_option("-L", "--label", action="append", type="string", help='Use LABEL instead of the file name in the headers')
     (options, args) = parser.parse_args()
 
 
@@ -43,7 +45,7 @@ def main():
     n = options.NUM
     diff = difflib.unified_diff(fromlines, tolines, fromfile, tofile, fromdate, todate, n=n)
 
-    output(diff, None)
+    output(diff, options.label)
 
 if __name__ == '__main__':
     main()

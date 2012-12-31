@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# -*- coding: utf8 -*-
+# -*- coding: utf-8 -*-
 
 import sys, os
 from PySide.QtCore import *
@@ -26,8 +26,8 @@ class MainWindow(QWidget):
         self.txtSvnCmd = QLineEdit(self.conf('svncmd'))
         self.txtSrcDir = QLineEdit(self.conf('srcdir'))
         self.ltSource = yBoxLayout([
-            [ ('', QLabel('Your svn Id')), ('', self.txtSvnId), None ],
-            [ ('', QLabel('svn Command')), ('', self.txtSvnCmd) ],
+            [ ('', QLabel('Your Svn Id')), ('', self.txtSvnId), None ],
+            [ ('', QLabel('Svn Command')), ('', self.txtSvnCmd) ],
             [ ('', QLabel('Source Path')), ('', self.txtSrcDir) ],
         ])
         self.grpSource.setMinimumWidth(400)
@@ -54,7 +54,10 @@ class MainWindow(QWidget):
         self.grpServer.setLayout(self.ltServer)
         self.rdoPwd.clicked.connect(self.auth_by_pwd)
         self.rdoKey.clicked.connect(self.auth_by_key)
-        self.rdoKey.click()
+        if self.conf('authbykey'):
+            self.rdoKey.click()
+        else:
+            self.rdoPwd.click()
         # ==== Server Settings ====
 
         # ==== Tab Widget ====
@@ -66,9 +69,10 @@ class MainWindow(QWidget):
 
         # ==== Log ====
         self.grpLog = QGroupBox(u'Log')
-        self.txtLog = QPlainTextEdit()
+        self.txtLog = QTextBrowser()
         self.txtLog.setReadOnly(True)
         self.txtLog.setMinimumHeight(60)
+        self.txtLog.setOpenExternalLinks(True)
         self.ltLog = yBoxLayout([
             [ ('', self.txtLog) ]
         ])
@@ -95,18 +99,26 @@ class MainWindow(QWidget):
                 'D': QIcon('filedelete.ico'),
                 }
 
+    def center(self):
+        self.move(
+            QApplication.desktop().screen().rect().center() -
+            self.rect().center() )
+
     def conf(self, key, value=None):
         if value is not None:
             self.config[key] = value
-        return self.config.get(key, '')
+        if key == 'authbykey':
+            return self.config.get(key, False)
+        else:
+            return self.config.get(key, '')
 
     #def reject(self):
     #    self.close()
 
     def closeEvent(self, event):
+        self.save_config()
         for i in xrange(self.tab.count()):
             self.tab.widget(i).close()
-        self.save_config()
         event.accept()
 
     def auth_by_pwd(self):
@@ -124,14 +136,18 @@ class MainWindow(QWidget):
         self.conf('srvhost', self.txtSrvHost.text())
         self.conf('srvuser', self.txtSrvUser.text())
         self.conf('srvpwd', self.txtSrvPwd.text())
+        self.conf('rmtdir', self.txtRmtDir.text())
         self.conf('keyfile', self.txtKeyFile.text())
+        self.conf('authbykey', self.rdoKey.isChecked())
         pk.dump(self.config, open(self.config_file, 'w'))
 
     def append_log(self, logtext=''):
-        self.txtLog.appendPlainText(logtext)
+        #self.txtLog.appendPlainText(logtext)
+        self.txtLog.append(logtext) #+"<img src='loading.gif'/>")
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     win = MainWindow()
     win.show()
+    win.center()
     sys.exit(app.exec_())

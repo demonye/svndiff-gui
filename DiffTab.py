@@ -1,5 +1,5 @@
 #!/usr/bin/env python2
-# -* coding: utf8 -*-
+# -* coding: utf-8 -*-
 
 import os
 import time
@@ -83,6 +83,7 @@ class DiffTab(QWidget):
 
     def closeEvent(self, event):
         self.worker.exit()
+        self.worker.join()
         event.accept()
 
     def get_status(self):
@@ -144,8 +145,22 @@ class DiffTab(QWidget):
             return ('INFO', u'Connected to {}'.format(host))
 
         def upload(dirname):
+            pt = self.parent
+            bugid = self.txtBugId.text()
+            svnid = pt.txtSvnId.text()
+            if svnid == "":
+            	svnid = "yanpeng.wang"
+            rmtdir = os.path.join(pt.txtRmtDir.text(), svnid, bugid)
+            rmtdir = rmtdir.replace(os.sep, '/')
+            self.sshcli.exec_command("[ -d {0} ] && rm -rf {0}; mkdir -p {0}".format(rmtdir))
             sftpcli = self.sshcli.open_sftp()
-            return ('INFO', 'TODO')
+            for f in os.listdir(dirname):
+                if f.lower().endswith('.html'):
+                    localfile = os.path.join(dirname, f)
+                    remotefile = os.path.join(rmtdir, f).replace(os.sep, '/')
+                    sftpcli.put(localfile, remotefile)
+            url = "http://10.1.1.5/diffs/{}/{}".format(svnid, bugid)
+            return ('INFO', "Chick <a href='{}'>Here</a> to check result".format(url))
 
         if self.txtBugId.text() == "":
             yield ('WARN', u"Please input bug id!")
@@ -172,7 +187,7 @@ class DiffTab(QWidget):
         yield ('INFO', u'Connecting to {} ...'.format(self.parent.txtSrvHost.text()))
         yield connect()
 
-        yield ('INFO', u'Uploading diff to {}'.format(self.parent.txtSrvHost.text()))
+        yield ('INFO', u'Uploading diff to {} ...'.format(self.parent.txtSrvHost.text()))
         yield upload(sd.save_dir)
 
     def show_changed_files(self, n=None, msg=None):
