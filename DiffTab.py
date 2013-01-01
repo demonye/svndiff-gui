@@ -5,11 +5,9 @@ import os
 import time
 from PySide.QtCore import *
 from PySide.QtGui import *
-from paramiko import SSHClient, AutoAddPolicy
 from yelib.qt.layout import *
-from yelib.task import *
+from yelib.cmdtask import *
 from yelib.util import force_rmdir
-from svndiff import SvnDiff
 
 class DiffTab(QWidget):
 
@@ -34,14 +32,16 @@ class DiffTab(QWidget):
         tb.setAlternatingRowColors(True)
 
         self.txtBugId = QLineEdit()
-        self.btnFind = QPushButton(u'Find Changed Files')
-        self.btnDiff = QPushButton(u'Make Diff')
+        self.txtBugId.setMaximumWidth(120)
+        self.btnFind = QPushButton(u'Get Changed Files')
+        self.btnDiff = QPushButton(u'    Make Diff    ')
+        self.btnUpload = QPushButton(u'Upload')
         self.lstFiles = tb
         self.lt = yBoxLayout([
             [ ('', self.lstFiles) ],
-            [ ('', self.btnFind), None,
+            [ ('', self.btnFind), ('', self.btnDiff), None,
               ('', QLabel(u'Bug Id')), ('', self.txtBugId),
-              ('', self.btnDiff), None
+              ('', self.btnUpload),
             ],
         ])
         self.setLayout(self.lt)
@@ -52,176 +52,108 @@ class DiffTab(QWidget):
                 'D': QIcon('filedelete.ico'),
                 }
         self.worker = None
-        self.sd = SvnDiff(getstatus=False)
-        svncmd = self.parent.txtSvnCmd.text()
-        if svncmd == "":
-            self.parent.txtSvnCmd.setText(self.sd.svn_cmd.path)
-        else:
-            self.sd.svn_cmd._path = svncmd
-        self.sshcli = SSHClient()
+        self.btnFind.clicked.connect(self.getStatus)
+        self.btnDiff.clicked.connect(self.makeDiff)
+        self.btnUpload.clicked.connect(self.uploadFiles)
 
 
     def conf(self, key):
         return self.parent.tab.widget(1).conf(key)
 
-    def init_task(self):
-        self.BackTasks = {
-            self.btnFind: Task(self.get_status, [self.show_changed_files]),
-            self.btnDiff: Task(self.make_diff, [self.show_diff_result]),
-            }
-        for btn, task in self.BackTasks.items():
-            self.worker.add(task)
-            btn.clicked.connect(task.run)
-
-#    def reject(self):
-#        self.close()
-#
-    def showEvent(self, event):
-        event.accept()
-        self.worker = Worker()
-        self.init_task()
+#    def showEvent(self, event):
+#        event.accept()
 
     def closeEvent(self, event):
-        self.worker.exit()
-        self.worker.join()
+        if self.worker:
+            self.worker.stop()
         event.accept()
 
-    def get_status(self):
+    def getStatus(self):
         self.btnFind.setDisabled(True)
-        sd = self.sd
-        yield ('INFO', u"Getting svn status, please wait ...")
-        self.sd.set_src_dir(self.parent.txtSrcDir.text())
-        sd.status()
-        for f in sd.files:
-            yield ('M', f)
-        for f in sd.newfiles:
-            yield ('A', f)
-        for f in sd.removedfiles:
-            yield ('D', f)
-        yield ('INFO', u"Getting svn status done") 
+        cmds = ["svndiff", "-c", "-s", self.parent.txtSrcDir.text()]
+        task = CmdTask(cmds)
+        task.inst(self.showChangedFiles)
+        self.worker = CmdWorker(task)
 
-    def make_diff(self):
-        self.btnDiff.setDisabled(True)
-        sd = self.sd
-        tb = self.lstFiles
-        files = []
-
-        def modify_file(f):
-            files.append(f)
-            args = [ "diff", f, "--diff-cmd=diff", "-x", "-U10000" ]
-            sd.gen_diff_file(args, ' '+f)
-
-        def add_file(f):
-            files.append(f)
-            in_file = open(f)
-            out_html = open(os.path.join(sd.save_dir, ' '+sd.hdiff_fname(f)), 'w')
-            out_html.write("<xmp>\n")
-            n = 1
-            for l in in_file.readlines():
-                out_html.write("%5d  %s\n" % (n, l))
-                n += 1
-            out_html.write("</xmp>\n")
-            out_html.close()
-            in_file.close()
-
-        def connect():
-            host = self.parent.txtSrvHost.text()
-            user = self.parent.txtSrvUser.text()
-            kwargs = {
-                'hostname': host,
-                'username': user,
-                'timeout': 10,
-            }
-
-            if self.parent.rdoPwd.isChecked():
-                pwd = self.parent.txtSrvPwd.text()
-                kwargs['password'] = pwd
-            elif self.parent.rdoKey.isChecked():
-                kfile = self.parent.txtKeyFile.text()
-                kwargs['key_filename'] = kfile
-
-            self.sshcli.set_missing_host_key_policy(AutoAddPolicy())
-            self.sshcli.connect(**kwargs)
-            return ('INFO', u'Connected to {}'.format(host))
-
-        def upload(dirname):
-            pt = self.parent
-            bugid = self.txtBugId.text()
-            svnid = pt.txtSvnId.text()
-            if svnid == "":
-            	svnid = "yanpeng.wang"
-            rmtdir = os.path.join(pt.txtRmtDir.text(), svnid, bugid)
-            rmtdir = rmtdir.replace(os.sep, '/')
-            self.sshcli.exec_command("[ -d {0} ] && rm -rf {0}; mkdir -p {0}".format(rmtdir))
-            sftpcli = self.sshcli.open_sftp()
-            for f in os.listdir(dirname):
-                if f.lower().endswith('.html'):
-                    localfile = os.path.join(dirname, f)
-                    remotefile = os.path.join(rmtdir, f).replace(os.sep, '/')
-                    sftpcli.put(localfile, remotefile)
-            url = "http://10.1.1.5/diffs/{}/{}".format(svnid, bugid)
-            return ('INFO', "Chick <a href='{}'>Here</a> to check result".format(url))
-
-        if self.txtBugId.text() == "":
-            yield ('WARN', u"Please input bug id!")
-            return
-
-        force_rmdir(self.sd.save_dir)
-        os.makedirs(self.sd.save_dir)
-        for i in xrange(tb.rowCount()):
-            item = tb.item(i, 0)
-            if item.checkState() == Qt.Checked:
-                stat = tb.item(i, 2).text()
-                disp_f = tb.item(i, 3).text()
-                f = tb.item(i, 4).text()
-                if stat == 'M':
-                    yield ('INFO', u'Making-diff {} ...'.format(disp_f))
-                    modify_file(f)
-                elif stat == 'A':
-                    yield ('INFO', u'Adding file {} ...'.format(disp_f))
-                    add_file(f)
-        yield ('INFO', u'Making-diff All-diffs ...')
-        args = [ "diff" ] + files
-        sd.gen_diff_file(args, 'All-diffs')
-
-        yield ('INFO', u'Connecting to {} ...'.format(self.parent.txtSrvHost.text()))
-        yield connect()
-
-        yield ('INFO', u'Uploading diff to {} ...'.format(self.parent.txtSrvHost.text()))
-        yield upload(sd.save_dir)
-
-    def show_changed_files(self, n=None, msg=None):
-        tb = self.lstFiles
-        if n == 0:
-            for i in xrange(tb.rowCount()):
-                tb.removeRow(0)
-        elif n is None:
+    @Slot(TaskOutput)
+    def showChangedFiles(self, msg):
+        if msg.type == OutputType.NOTIFY and msg.output == 'EXIT':
             self.btnFind.setDisabled(False)
             return
-        if msg[0] in ('INFO', 'WARN', 'ERROR'):
-            self.update_status(msg[1])
-        else:
+        if msg.type == OutputType.OUTPUT and msg.output:
+            tb = self.lstFiles
+            m = msg.output.split()
             n = tb.rowCount()
             tb.insertRow(n)
             item = QTableWidgetItem()
             item.setCheckState(Qt.Checked)
             tb.setItem(n, 0, item)
-            tb.setItem(n, 1,QTableWidgetItem(self.statusIcons[msg[0]], ''))
-            tb.setItem(n, 2, QTableWidgetItem(msg[0]))
-            tb.setItem(n, 3, QTableWidgetItem(self.sd.display_fname(msg[1])))
-            tb.setItem(n, 4, QTableWidgetItem(msg[1]))
+            tb.setItem(n, 1, QTableWidgetItem(self.statusIcons[m[0]], ''))
+            tb.setItem(n, 2, QTableWidgetItem(m[0]))
+            tb.setItem(n, 3, QTableWidgetItem(m[1]))
+            tb.setItem(n, 4, QTableWidgetItem(m[2]))
+        else:
+            self.appendLog(msg)
 
-    def show_diff_result(self, n=None, msg=None):
-        if n is None:
+
+    def makeDiff(self):
+        self.btnDiff.setDisabled(True)
+        files = []
+        tb = self.lstFiles
+        for i in xrange(tb.rowCount()):
+            item = tb.item(i, 0)
+            if item.checkState() == Qt.Checked:
+                files.append(tb.item(i, 4).text())
+        cmds = ["svndiff", "-s", self.parent.txtSrcDir.text()] + files
+        task = CmdTask(cmds)
+        task.inst(self.readyToUpload)
+        self.worker = CmdWorker(task)
+
+    @Slot(TaskOutput)
+    def readyToUpload(self, msg):
+        if msg.type == OutputType.NOTIFY and msg.output == 'EXIT':
+            self.appendLog(TaskOutput(u"*** Check directory 'hdiff' to review the result ***"))
             self.btnDiff.setDisabled(False)
             return
-        self.update_status(msg[1])
-        if msg[0] == 'WARN':
-            QMessageBox.warning(self, u'Warning', msg[1])
-        elif msg[0] == 'ERROR':
-            QMessageBox.critical(self, u'Error', msg[1])
+        self.appendLog(msg)
+
+    def uploadFiles(self):
+        if self.txtBugId.text() == "":
+            self.appendLog(TaskOutput(u"!!! Please input Bug Id !!!", OutputType.WARN))
+            return
+
+        self.btnUpload.setDisabled(True)
+        pt = self.parent
+        bugid = self.txtBugId.text()
+        svnid = pt.txtSvnId.text()
+        self.result_url = "http://10.1.1.5/diffs/{}/{}".format(svnid, bugid)
+        rmtdir = os.path.join(pt.txtRmtDir.text(), svnid, bugid).replace(os.sep, '/')
+        cmds = ["uploadfiles", pt.txtSrvHost.text(),
+                "hdiff", rmtdir, "-u", pt.txtSrvUser.text() ]
+        if pt.rdoPwd.isChecked():
+            cmds.append("-p")
+            cmds.append(pt.txtSrvPwd.text())
+        elif pt.rdoKey.isChecked():
+            cmds.append("-k")
+            cmds.append(pt.txtKeyFile.text())
+        task = CmdTask(cmds)
+        task.inst(self.uploadCompleted)
+        self.worker = CmdWorker(task)
 
 
-    def update_status(self, msg=''):
-        self.parent.append_log(msg)
+    @Slot(TaskOutput)
+    def uploadCompleted(self, msg):
+        if msg.type == OutputType.NOTIFY and msg.output == 'EXIT':
+            self.appendLog(TaskOutput(
+                u"*** Click <a href='{}'>Here</a> to check the result ***".format(
+                    self.result_url)))
+            self.btnUpload.setDisabled(False)
+            return
+        self.appendLog(msg)
+
+
+    def appendLog(self, log):
+        if log.type == OutputType.NOTIFY:
+            return
+        self.parent.append_log(log.formatted_html())
 

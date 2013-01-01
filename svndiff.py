@@ -70,9 +70,9 @@ class SvnDiff(object):
                 stat,fname = line.split()
                 if stat == 'M':
                     self.files.append(fname)
-                elif stat == 'A':
+                elif stat in ('A', '?'):
                     self.newfiles.append(fname)
-                elif stat == 'D':
+                elif stat in ('D', '!'):
                     self.removedfiles.append(fname)
             except ValueError:
                 pass
@@ -86,7 +86,7 @@ class SvnDiff(object):
     def hdiff_fname(self, fname):
         return fname.replace(self.src_dir+os.sep, '').replace(os.sep, '.') + '.html'
 
-    def gen_diff_file(self, args, fname):
+    def gen_diff_file(self, args, fname, new_files=[], removed_files=[]):
         diff_files = []
         curr_file = {}
         curr_state = ['dump']
@@ -135,6 +135,13 @@ class SvnDiff(object):
                 curr_state[0] = 'dump'
                 dump_line(curr_state[0], line, line)
 
+        def new_or_removed(files):
+            return [{
+                'name': os.path.basename(v) + '.html',
+                'disp_name': self.display_fname(v),
+                } for v in files ]
+
+
         patterns = {
             r'^Index: (\S+)$': set_fname,
             r'^@@ -(\d+).*\+(\d+).*@@$': set_line_num,
@@ -149,48 +156,77 @@ class SvnDiff(object):
             diff_files.append(copy.copy(curr_file))
 
         out_html = open(os.path.join(self.save_dir, fname), 'w')
-        out_html.write(self.htmltpl.generate(diff_files=diff_files, my_escape=self.html_escape))
+        out_html.write(self.htmltpl.generate(
+            diff_files=diff_files,
+            new_files=new_or_removed(new_files),
+            removed_files=new_or_removed(removed_files),
+            my_escape=self.html_escape ))
 
 
 if __name__ == "__main__":
     save_dir = "hdiff"
     src_dir = ""
 
-    USAGE = "usage"
+    USAGE = "{} [options] diffitems".format(sys.argv[0])
 
     parser = OptionParser(usage=USAGE)
-    parser.add_option('-b', '--savedir', default="hdiff",
-             help = (
-                "savedir is the directory where the diff files will be stored."
-                "It could be any directory name like '/tmp/mybugs/perf-bug'. "
-                "If it is not specified, diff files will be stored in the directory 'hdiff'" )
-             )
     parser.add_option('-s', '--srcdir', default=".",
              help = (
                 "srcdir is the directory where the source code is saved. "
                 "If it is not specified, the current dir will be used." )
              )
+    parser.add_option('-c', '--change', action="store_true", default=False,
+            help = "Output changed files")
+    parser.add_option('-d', '--savedir', default="hdiff",
+             help = (
+                "savedir is the directory where the diff files will be stored."
+                "It could be any directory name like '/tmp/mybugs/perf-bug'. "
+                "If it is not specified, diff files will be stored in the "
+                "directory 'hdiff'" )
+             )
     (opts, args) = parser.parse_args()
 
-    if opts.savedir:
-        save_dir = opts.savedir
     if opts.srcdir:
         src_dir = opts.srcdir
-    if not os.path.isdir(save_dir):
-        os.mkdir(save_dir)
+    if opts.savedir:
+        save_dir = opts.savedir
 
     sd = SvnDiff(src_dir, save_dir)
-
-    print("files =  {0}".format('  '.join([sd.display_fname(v) for v in sd.files])))
-    print("newfiles =  {0}".format('  '.join([sd.display_fname(v) for v in sd.newfiles])))
+    if opts.change:
+        for fn in sd.files:
+            print 'M', sd.display_fname(fn), fn
+        for fn in sd.newfiles:
+            print 'A', sd.display_fname(fn), fn
+        for fn in sd.removedfiles:
+            print 'D', sd.display_fname(fn), fn
+        sys.exit(0)
 
     force_rmdir(save_dir)
     os.makedirs(save_dir)
 
+    diff_files = []
     for f in sd.files:
-        args = [ "diff", f, "--diff-cmd=diff", "-x", "-U10000" ]
-        sd.gen_diff_file(args, ' '+f)
+        if args and f not in args:
+            continue
+        diff_files.append(f)
+        diffargs = [ "diff", f, "--diff-cmd=diff", "-x", "-U10000" ]
+        sd.gen_diff_file(diffargs, ' '+f)
+    new_files = []
+    for f in sd.newfiles:
+        if args and f not in args:
+            continue
+        new_files.append(f)
+        in_file = open(f)
+        out_html = open(os.path.join(sd.save_dir, ' '+sd.hdiff_fname(f)), 'w')
+        out_html.write("<xmp>\n")
+        n = 1
+        for l in in_file.readlines():
+            out_html.write("%5d  %s\n" % (n, l))
+            n += 1
+        out_html.write("</xmp>\n")
+        out_html.close()
+        in_file.close()
 
-    args = [ "diff", src_dir ]
-    sd.gen_diff_file(args, 'All-diffs')
+    diffargs = [ "diff" ] + diff_files
+    sd.gen_diff_file(diffargs, 'All-diffs', new_files, sd.removedfiles)
 

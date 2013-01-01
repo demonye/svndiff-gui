@@ -23,11 +23,11 @@ class MainWindow(QWidget):
         # ==== Source Settings ====
         self.grpSource = QGroupBox(u'Source')
         self.txtSvnId = QLineEdit(self.conf('svnid'))
-        self.txtSvnCmd = QLineEdit(self.conf('svncmd'))
+        #self.txtSvnCmd = QLineEdit(self.conf('svncmd'))
         self.txtSrcDir = QLineEdit(self.conf('srcdir'))
         self.ltSource = yBoxLayout([
             [ ('', QLabel('Your Svn Id')), ('', self.txtSvnId), None ],
-            [ ('', QLabel('Svn Command')), ('', self.txtSvnCmd) ],
+            #[ ('', QLabel('Svn Command')), ('', self.txtSvnCmd) ],
             [ ('', QLabel('Source Path')), ('', self.txtSrcDir) ],
         ])
         self.grpSource.setMinimumWidth(400)
@@ -64,14 +64,14 @@ class MainWindow(QWidget):
         self.tab = QTabWidget()
         self.tabDiff = DiffTab(self)
         self.tab.addTab(self.tabDiff, u'Make Diff')
-        self.tab.setMinimumHeight(300)
+        self.tab.setMinimumHeight(400)
         # ==== Tab Widget ====
 
         # ==== Log ====
         self.grpLog = QGroupBox(u'Log')
         self.txtLog = QTextBrowser()
         self.txtLog.setReadOnly(True)
-        self.txtLog.setMinimumHeight(60)
+        self.txtLog.setMinimumHeight(100)
         self.txtLog.setOpenExternalLinks(True)
         self.ltLog = yBoxLayout([
             [ ('', self.txtLog) ]
@@ -131,7 +131,7 @@ class MainWindow(QWidget):
 
     def save_config(self):
         self.conf('svnid', self.txtSvnId.text())
-        self.conf('svncmd', self.txtSvnCmd.text())
+        #self.conf('svncmd', self.txtSvnCmd.text())
         self.conf('srcdir', self.txtSrcDir.text())
         self.conf('srvhost', self.txtSrvHost.text())
         self.conf('srvuser', self.txtSrvUser.text())

@@ -5,8 +5,8 @@ from subprocess import *
 from yelib.util import enum
 
 OutputType = enum(
-    'ERROR', 'WARN', 'INFO', 'DEBUG',
-    'DEBUG1', 'DEBUG2', 'DEBUG3', 'DEBUG4'
+    'NOTIFY', 'OUTPUT', 'ERROR', 'WARN', 'INFO',
+    'DEBUG', 'DEBUG1', 'DEBUG2', 'DEBUG3', 'DEBUG4'
     )
 
 class TaskOutput(object):
@@ -23,8 +23,19 @@ class TaskOutput(object):
         self.logtime = time.strftime('%H:%M:%S')
 
     def formatted(self):
-        return "{} [{:6s}] {}".format(
+        return u"{} [{:6s}] {}".format(
                 self.logtime, self.typestr, self.output)
+    def formatted_html(self):
+        color = 'green'
+        if self.type == OutputType.ERROR:
+            color = 'red'
+        elif self.type == OutputType.WARN:
+            color = 'orange'
+        elif self.type >= OutputType.DEBUG:
+            color = 'gray'
+        return u"<font style='color:gray;'>{}</font> <font style='color:{};font-weight:bold;'>[{:6s}]</font> {}".format(
+                self.logtime, color,
+                self.typestr, self.output)
 
 class CmdTask(QObject):
     _id = 0
@@ -44,12 +55,16 @@ class CmdTask(QObject):
         if self.debug_lvl >= lvl:
             self._sig.emit(TaskOutput(out, lvl))
 
-    def emitInfo(self, out):
-        self.send(out, OutputType.INFO)
-    def emitWarn(self, out):
-        self.send(out, OutputType.WARN)
+    def emitNotify(self, out):
+        self.send(out, OutputType.NOTIFY)
+    def emitOutput(self, out):
+        self.send(out, OutputType.OUTPUT)
     def emitError(self, out):
         self.send(out, OutputType.ERROR)
+    def emitWarn(self, out):
+        self.send(out, OutputType.WARN)
+    def emitInfo(self, out):
+        self.send(out, OutputType.INFO)
     def emitDebug(self, out):
         self.send(out, OutputType.DEBUG)
     def emitDebug1(self, out):
@@ -74,24 +89,24 @@ class CmdWorker(Thread):
     def stop(self):
         self._continue = False
 
-    def _cleanup(self):
-        pass
-
     def run(self):
         try:
             p = Popen(self._task.args, shell=True, stdout=PIPE, stderr=STDOUT)
-            self._task.emitInfo(' '.join(self._task.args))
+            cmdline = ' '.join(self._task.args)
+            self._task.emitInfo(u'START: {} ...'.format(cmdline))
             while self._continue:
                 line = p.stdout.readline()
                 if line == "":
                     break
-                self._task.emitDebug(line.rstrip())
+                self._task.emitOutput(line.rstrip())
             if self._continue:
-                self._task.emitInfo("Execution OK")
+                self._task.emitInfo(u'END: {}'.format(cmdline))
             else:
                 p.terminate()
                 p.wait()
-                self._task.emitWarn("Execution terminated")
+                self._task.emitWarn(u'TERMINITED: {}'.format(cmdline))
+        except Exception as ex:
+            self._task.emitError(unicode(ex))
         finally:
-            self._cleanup()
+            self._task.emitNotify('EXIT')
 

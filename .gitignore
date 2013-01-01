@@ -38,6 +38,7 @@ nosetests.xml
 *~
 # pyinstaller
 *.exe
+*.spec
 # svndiff config files
 settings
 sshkey

@@ -61,6 +61,20 @@
         </div>
     </div>
     {% end %}
+    {% for f in new_files %}
+    <div class='file-main'>
+        <div class='file-title'>
+            New File: <a href=%20{{ f['name'] }}>{{ f['disp_name'] }}</a>
+        </div>
+    </div>
+    {% end %}
+    {% for f in removed_files %}
+    <div class='file-main'>
+        <div class='file-title'>
+            Removed File: {{ f['disp_name'] }}
+        </div>
+    </div>
+    {% end %}
 </div>
 
 <div class='body-footer'>

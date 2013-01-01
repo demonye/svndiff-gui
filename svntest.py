@@ -6,6 +6,9 @@ from PySide.QtCore import *
 from PySide.QtGui import *
 from yelib.qt.layout import *
 from yelib.cmdtask import *
+import locale
+
+coding = locale.getdefaultlocale()[1]
 
 class MainWindow(QDialog):
     hasOutput = Signal(str)
@@ -17,7 +20,8 @@ class MainWindow(QDialog):
         self.hasOutput.connect(self.appendLog)
 
         # ==== Main Layout ====
-        self.txtCommand = QLineEdit('./test.sh')
+        #self.txtCommand = QLineEdit('./test.sh')
+        self.txtCommand = QLineEdit("dist\\test1")
         self.btnStart = QPushButton('Start')
         self.btnPause = QPushButton('Pause')
         self.btnStop = QPushButton('Stop')
@@ -37,7 +41,7 @@ class MainWindow(QDialog):
         ])
         self.setLayout(self.lt)
         self.setWindowTitle('Excute Command')
-        self.setWindowIcon(QIcon('./logo.png'))
+        self.setWindowIcon(QIcon('logo.png'))
 
         self.btnStart.clicked.connect(self.start)
         self.btnStop.clicked.connect(self.stop)
@@ -66,7 +70,10 @@ class MainWindow(QDialog):
     @Slot(TaskOutput)
     def appendLog(self, msg):
         #self.txtLog.appendPlainText(logtext)
-        self.txtLog.append(msg.formatted())
+        if msg.type == OutputType.OUTPUT:
+            self.txtLog.append(msg.output.decode(coding))
+        else:
+            self.txtLog.append(msg.formatted())
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
