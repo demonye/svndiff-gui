@@ -64,7 +64,7 @@ class MainWindow(QWidget):
         self.tab = QTabWidget()
         self.tabDiff = DiffTab(self)
         self.tab.addTab(self.tabDiff, u'Make Diff')
-        self.tab.setMinimumHeight(400)
+        self.tab.setMinimumHeight(200)
         # ==== Tab Widget ====
 
         # ==== Log ====
@@ -80,17 +80,21 @@ class MainWindow(QWidget):
         # ==== Log ====
 
         # ==== Main Layout ====
+        splitter = QSplitter(self)
+        splitter.setOrientation(Qt.Vertical)
+        splitter.setChildrenCollapsible(False)
+        splitter.addWidget(self.tab)
+        splitter.addWidget(self.grpLog)
         self.btnExit = QPushButton(u'Exit')
         self.lt = yBoxLayout([
             [ ('', self.grpSource), ('', self.grpServer) ],
-            [ ('', self.tab) ],
-            [ ('', self.grpLog) ],
+            [ ('', splitter) ],
             [ None, ('', self.btnExit) ],
         ])
         self.btnExit.clicked.connect(self.close)
         self.setLayout(self.lt)
         self.setWindowTitle('Svn Tool')
-        self.setWindowIcon(QIcon('./logo.png'))
+        self.setWindowIcon(QIcon('logo.png'))
         # ==== Main Layout ====
 
         self.statusIcons = {

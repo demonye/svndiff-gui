@@ -21,7 +21,7 @@ class MainWindow(QDialog):
 
         # ==== Main Layout ====
         #self.txtCommand = QLineEdit('./test.sh')
-        self.txtCommand = QLineEdit("dist\\test1")
+        self.txtCommand = QLineEdit("dir")
         self.btnStart = QPushButton('Start')
         self.btnPause = QPushButton('Pause')
         self.btnStop = QPushButton('Stop')

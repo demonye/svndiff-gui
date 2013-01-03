@@ -1,3 +1,4 @@
+import os
 import time
 from PySide.QtCore import QObject, Signal
 from threading import Thread
@@ -33,9 +34,10 @@ class TaskOutput(object):
             color = 'orange'
         elif self.type >= OutputType.DEBUG:
             color = 'gray'
-        return u"<font style='color:gray;'>{}</font> <font style='color:{};font-weight:bold;'>[{:6s}]</font> {}".format(
-                self.logtime, color,
-                self.typestr, self.output)
+        return (u"<font style='color:gray;'>{}</font> "
+                u"<font style='color:{};font-weight:bold;'>"
+                u"[{:6s}]</font> {}".format(
+                    self.logtime, color, self.typestr, self.output) )
 
 class CmdTask(QObject):
     _id = 0
@@ -91,7 +93,14 @@ class CmdWorker(Thread):
 
     def run(self):
         try:
-            p = Popen(self._task.args, shell=True, stdout=PIPE, stderr=STDOUT)
+            popen_args = {
+                'args': self._task.args,
+                'stdout': PIPE,
+                'stderr': STDOUT,
+                }
+            if os.name != 'posix':
+                popen_args['shell'] = True
+            p = Popen(**popen_args)
             cmdline = ' '.join(self._task.args)
             self._task.emitInfo(u'START: {} ...'.format(cmdline))
             while self._continue:

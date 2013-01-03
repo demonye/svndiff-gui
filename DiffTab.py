@@ -81,8 +81,12 @@ class DiffTab(QWidget):
             self.btnFind.setDisabled(False)
             return
         if msg.type == OutputType.OUTPUT and msg.output:
+            #print "****", msg.output
             tb = self.lstFiles
             m = msg.output.split()
+            if m[0] not in self.statusIcons:
+                self.appendLog(msg)
+                return
             n = tb.rowCount()
             tb.insertRow(n)
             item = QTableWidgetItem()
@@ -155,5 +159,8 @@ class DiffTab(QWidget):
     def appendLog(self, log):
         if log.type == OutputType.NOTIFY:
             return
-        self.parent.append_log(log.formatted_html())
+        if log.type == OutputType.OUTPUT:
+            self.parent.append_log(log.output)
+        else:
+            self.parent.append_log(log.formatted_html())
 

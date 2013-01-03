@@ -1,3 +1,6 @@
+#!/usr/bin/env python2
+# -*- coding: utf-8 -*-
+
 import sys
 import os
 import re
@@ -11,7 +14,14 @@ from yelib.util import force_rmdir
 def is_win64():
     return (os.environ.get('PROCESSOR_ARCHITEW6432', None) is not None)
 def exec_cmd(*args):
-    p = Popen(args, shell=True, stdout=PIPE, stderr=PIPE).communicate()
+    popen_args = {
+        'args': args,
+        'stdout': PIPE,
+        'stderr': PIPE,
+        }
+    if os.name != 'posix':
+        popen_args['shell'] = True
+    p = Popen(**popen_args).communicate()
     if len(p[1]) > 0:
         raise Exception(p[1])
     return p[0]
@@ -34,8 +44,8 @@ class SvnCmd(object):
                             _winreg.KEY_WOW64_32KEY)
                         )
                 self._path = os.path.join(_winreg.QueryValueEx(reg, "Location")[0], "svn")
-            except Exception as err:
-                print err
+            except ImportError:
+                pass
         return self._path
 
     def run(self, args=[], handler=None):
