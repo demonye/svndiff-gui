@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
 # -*- coding: utf-8 -*-
 
 import sys, os
@@ -8,6 +8,8 @@ from yelib.qt.layout import *
 import cPickle as pk
 
 from DiffTab import DiffTab
+
+__version__ = "1.0"
 
 class MainWindow(QWidget):
 
@@ -25,13 +27,16 @@ class MainWindow(QWidget):
         self.txtSvnId = QLineEdit(self.conf('svnid'))
         #self.txtSvnCmd = QLineEdit(self.conf('svncmd'))
         self.txtSrcDir = QLineEdit(self.conf('srcdir'))
+        self.btnSrcDir = QPushButton('/')
         self.ltSource = yBoxLayout([
             [ ('', QLabel('Your Svn Id')), ('', self.txtSvnId), None ],
             #[ ('', QLabel('Svn Command')), ('', self.txtSvnCmd) ],
-            [ ('', QLabel('Source Path')), ('', self.txtSrcDir) ],
+            [ ('', QLabel('Source Path')), ('', self.txtSrcDir), ('', self.btnSrcDir) ],
         ])
         self.grpSource.setMinimumWidth(400)
         self.grpSource.setLayout(self.ltSource)
+        self.btnSrcDir.setFixedWidth(15)
+        self.btnSrcDir.clicked.connect(self.select_srcdir)
         # ==== Source Settings ====
 
         # ==== Server Settings ====
@@ -41,17 +46,20 @@ class MainWindow(QWidget):
         self.txtSrvPwd = QLineEdit(self.conf('srvpwd'))
         self.txtSrvPwd.setEchoMode(QLineEdit.Password)
         self.txtKeyFile = QLineEdit(self.conf('keyfile'))
+        self.btnKeyFile = QPushButton('/')
         self.txtRmtDir = QLineEdit(self.conf('rmtdir'))
         self.rdoPwd = QRadioButton(u'Password', self)
         self.rdoKey = QRadioButton(u'Key File', self)
         self.ltServer = yBoxLayout([
             [ ('', QLabel(u'Host')), ('', self.txtSrvHost), ('', QLabel(u'Username')), ('', self.txtSrvUser) ],
-            [ ('', QLabel(u'Upload To')), ('', self.txtRmtDir) ],
-            [ ('', self.rdoPwd), ('', self.txtSrvPwd), ('', self.rdoKey), ('', self.txtKeyFile) ],
+            [ ('', self.rdoPwd), ('', self.txtSrvPwd), ('', QLabel(u'Upload To')), ('', self.txtRmtDir) ],
+            [ ('', self.rdoKey), ('', self.txtKeyFile), ('', self.btnKeyFile) ],
         ])
         #self.txtSrvUser.setMaximumWidth(100)
         self.grpServer.setMinimumWidth(400)
         self.grpServer.setLayout(self.ltServer)
+        self.btnKeyFile.setFixedWidth(15)
+        self.btnKeyFile.clicked.connect(self.select_keyfile)
         self.rdoPwd.clicked.connect(self.auth_by_pwd)
         self.rdoKey.clicked.connect(self.auth_by_key)
         if self.conf('authbykey'):
@@ -97,12 +105,6 @@ class MainWindow(QWidget):
         self.setWindowIcon(QIcon('logo.png'))
         # ==== Main Layout ====
 
-        self.statusIcons = {
-                'A': QIcon('fileadd.ico'),
-                'M': QIcon('filemodify.ico'),
-                'D': QIcon('filedelete.ico'),
-                }
-
     def center(self):
         self.move(
             QApplication.desktop().screen().rect().center() -
@@ -128,10 +130,24 @@ class MainWindow(QWidget):
     def auth_by_pwd(self):
         self.txtSrvPwd.setDisabled(False)
         self.txtKeyFile.setDisabled(True)
+        self.btnKeyFile.setDisabled(True)
 
     def auth_by_key(self):
         self.txtSrvPwd.setDisabled(True)
         self.txtKeyFile.setDisabled(False)
+        self.btnKeyFile.setDisabled(False)
+
+    def select_srcdir(self):
+        srcdir = self.txtSrcDir
+        dirname = QFileDialog.getExistingDirectory(self, u'Select Source Directory', srcdir.text())
+        if len(dirname) > 0:
+            srcdir.setText(dirname)
+
+    def select_keyfile(self):
+        keyfile = self.txtKeyFile
+        filename = QFileDialog.getOpenFileName(self, u'Select Key File', keyfile.text())
+        if len(filename) > 0:
+            keyfile.setText(filename[0])
 
     def save_config(self):
         self.conf('svnid', self.txtSvnId.text())

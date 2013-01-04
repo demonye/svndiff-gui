@@ -72,6 +72,14 @@ class SvnDiff(object):
         self.src_dir = src_dir
 
     def status(self):
+        def add_file(files, fn):
+            if os.path.isdir(fn):
+                for root, dirs, fls in os.walk(fn):
+                    for f in fls:
+                        files.append(os.path.join(root, f))
+            else:
+                files.append(fn)
+
         self.files = []
         self.newfiles = []
         self.removedfiles = []
@@ -81,9 +89,9 @@ class SvnDiff(object):
                 if stat == 'M':
                     self.files.append(fname)
                 elif stat in ('A', '?'):
-                    self.newfiles.append(fname)
+                    add_file(self.newfiles, fname)
                 elif stat in ('D', '!'):
-                    self.removedfiles.append(fname)
+                    add_file(self.removedfiles, fname)
             except ValueError:
                 pass
 
@@ -147,7 +155,7 @@ class SvnDiff(object):
 
         def new_or_removed(files):
             return [{
-                'name': os.path.basename(v) + '.html',
+                'name': self.hdiff_fname(v),
                 'disp_name': self.display_fname(v),
                 } for v in files ]
 
@@ -171,6 +179,16 @@ class SvnDiff(object):
             new_files=new_or_removed(new_files),
             removed_files=new_or_removed(removed_files),
             my_escape=self.html_escape ))
+
+    def _print_files(self, stat, files):
+        for fn in files:
+        	print stat, self.display_fname(fn), fn
+
+
+    def print_changed_files(self):
+        self._print_files('M', self.files)
+        self._print_files('A', self.newfiles)
+        self._print_files('D', self.removedfiles)
 
 
 if __name__ == "__main__":
@@ -202,14 +220,10 @@ if __name__ == "__main__":
         save_dir = opts.savedir
 
     sd = SvnDiff(src_dir, save_dir)
+
     if opts.change:
-        for fn in sd.files:
-            print 'M', sd.display_fname(fn), fn
-        for fn in sd.newfiles:
-            print 'A', sd.display_fname(fn), fn
-        for fn in sd.removedfiles:
-            print 'D', sd.display_fname(fn), fn
-        sys.exit(0)
+    	sd.print_changed_files()
+    	sys.exit(0)
 
     force_rmdir(save_dir)
     os.makedirs(save_dir)

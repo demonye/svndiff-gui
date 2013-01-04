@@ -8,8 +8,15 @@ from PySide.QtGui import *
 from yelib.qt.layout import *
 from yelib.cmdtask import *
 from yelib.util import force_rmdir
+from paramiko import SSHClient, AutoAddPolicy
+from threading import Thread
+
+import locale
+coding = locale.getdefaultlocale()[1]
 
 class DiffTab(QWidget):
+
+    ssh_sig = Signal(TaskOutput)
 
     def __init__(self, parent=None):
         QWidget.__init__(self)
@@ -47,11 +54,13 @@ class DiffTab(QWidget):
         self.setLayout(self.lt)
 
         self.statusIcons = {
-                'A': QIcon('fileadd.ico'),
-                'M': QIcon('filemodify.ico'),
-                'D': QIcon('filedelete.ico'),
+                'A': 'fileadd.ico',
+                'M': 'filemodify.ico',
+                'D': 'filedelete.ico',
                 }
         self.worker = None
+        self.sshStop = False
+        self.sshtask = None
         self.btnFind.clicked.connect(self.getStatus)
         self.btnDiff.clicked.connect(self.makeDiff)
         self.btnUpload.clicked.connect(self.uploadFiles)
@@ -66,6 +75,9 @@ class DiffTab(QWidget):
     def closeEvent(self, event):
         if self.worker:
             self.worker.stop()
+        if self.sshtask:
+            self.sshStop = True
+            self.sshtask.join()
         event.accept()
 
     def getStatus(self):
@@ -73,11 +85,15 @@ class DiffTab(QWidget):
         cmds = ["svndiff", "-c", "-s", self.parent.txtSrcDir.text()]
         task = CmdTask(cmds)
         task.inst(self.showChangedFiles)
+
+        tb = self.lstFiles
+        for i in xrange(tb.rowCount()):
+            tb.removeRow(0)
         self.worker = CmdWorker(task)
 
     @Slot(TaskOutput)
     def showChangedFiles(self, msg):
-        if msg.type == OutputType.NOTIFY and msg.output == 'EXIT':
+        if msg.type == OutputType.NOTIFY and msg.output.startswith('EXIT '):
             self.btnFind.setDisabled(False)
             return
         if msg.type == OutputType.OUTPUT and msg.output:
@@ -92,7 +108,7 @@ class DiffTab(QWidget):
             item = QTableWidgetItem()
             item.setCheckState(Qt.Checked)
             tb.setItem(n, 0, item)
-            tb.setItem(n, 1, QTableWidgetItem(self.statusIcons[m[0]], ''))
+            tb.setItem(n, 1, QTableWidgetItem(QIcon(self.statusIcons[m[0]]), m[0]))
             tb.setItem(n, 2, QTableWidgetItem(m[0]))
             tb.setItem(n, 3, QTableWidgetItem(m[1]))
             tb.setItem(n, 4, QTableWidgetItem(m[2]))
@@ -115,7 +131,7 @@ class DiffTab(QWidget):
 
     @Slot(TaskOutput)
     def readyToUpload(self, msg):
-        if msg.type == OutputType.NOTIFY and msg.output == 'EXIT':
+        if msg.type == OutputType.NOTIFY and msg.output.startswith('EXIT '):
             self.appendLog(TaskOutput(u"*** Check directory 'hdiff' to review the result ***"))
             self.btnDiff.setDisabled(False)
             return
@@ -130,28 +146,71 @@ class DiffTab(QWidget):
         pt = self.parent
         bugid = self.txtBugId.text()
         svnid = pt.txtSvnId.text()
+        if svnid == "":
+            svnid = "yanpeng.wang"
         self.result_url = "http://10.1.1.5/diffs/{}/{}".format(svnid, bugid)
         rmtdir = os.path.join(pt.txtRmtDir.text(), svnid, bugid).replace(os.sep, '/')
-        cmds = ["uploadfiles", pt.txtSrvHost.text(),
-                "hdiff", rmtdir, "-u", pt.txtSrvUser.text() ]
+
+        conargs = {
+            'hostname': pt.txtSrvHost.text(),
+            'username': pt.txtSrvUser.text(),
+            'timeout' : 10,
+            'compress': True,
+            }
         if pt.rdoPwd.isChecked():
-            cmds.append("-p")
-            cmds.append(pt.txtSrvPwd.text())
+            conargs['password'] = pt.txtSrvPwd.text()
         elif pt.rdoKey.isChecked():
-            cmds.append("-k")
-            cmds.append(pt.txtKeyFile.text())
-        task = CmdTask(cmds)
-        task.inst(self.uploadCompleted)
-        self.worker = CmdWorker(task)
+            conargs['key_filename'] = pt.txtKeyFile.text()
+
+        self.ssh_sig.connect(self.uploadHandler)
+        self.sshtask = Thread(target=self._upload, args=(rmtdir,), kwargs=conargs)
+        self.sshtask.start()
+
+
+    def _upload(self, dstdir, **sshargs):
+        sshcli = SSHClient()
+        sftpcli = None
+        code = 0
+        self.ssh_sig.emit(TaskOutput(u'Conntecting to {} ...'.format(sshargs['hostname'])))
+        try:
+            sshcli.set_missing_host_key_policy(AutoAddPolicy())
+            sshcli.connect(**sshargs)
+            self.ssh_sig.emit(TaskOutput(u'Connected!'))
+            ret = sshcli.exec_command("[ -d {0} ] && rm -rf {0}; mkdir -p {0}".format(dstdir))
+            errstr = ret[2].read()
+            if errstr != '':
+                raise Exception(errstr)
+            sftpcli = sshcli.open_sftp()
+            srcdir = "hdiff"
+            for f in os.listdir(srcdir):
+                if self.sshStop:
+                    self.ssh_sig.emit(TaskOutput(u'Terminating ...'))
+                    return
+                if f.lower().endswith('.html'):
+                    localfile = os.path.join(srcdir, f)
+                    remotefile = os.path.join(dstdir, f).replace(os.sep, '/')
+                    self.ssh_sig.emit(TaskOutput(u'Uploading ' + f + ' ...'))
+                    sftpcli.put(localfile, remotefile)
+        except Exception as ex:
+            self.ssh_sig.emit(TaskOutput(unicode(ex), OutputType.ERROR))
+            code = -1
+        finally:
+            if sftpcli: sftpcli.close()
+            sshcli.close()
+            self.ssh_sig.emit(TaskOutput('EXIT '+str(code), OutputType.NOTIFY))
+            self.ssh_sig.disconnect()
 
 
     @Slot(TaskOutput)
-    def uploadCompleted(self, msg):
-        if msg.type == OutputType.NOTIFY and msg.output == 'EXIT':
-            self.appendLog(TaskOutput(
-                u"*** Click <a href='{}'>Here</a> to check the result ***".format(
-                    self.result_url)))
+    def uploadHandler(self, msg):
+        if msg.type == OutputType.NOTIFY and msg.output.startswith('EXIT '):
+            code = int(msg.output.split()[1])
+            if code == 0:
+                self.appendLog(TaskOutput(
+                    u"*** Click <a href='{}'>Here</a> to check the result ***".format(
+                        self.result_url)))
             self.btnUpload.setDisabled(False)
+            self.sshtask = None
             return
         self.appendLog(msg)
 
@@ -160,7 +219,7 @@ class DiffTab(QWidget):
         if log.type == OutputType.NOTIFY:
             return
         if log.type == OutputType.OUTPUT:
-            self.parent.append_log(log.output)
+            self.parent.append_log(log.output.decode(coding))
         else:
             self.parent.append_log(log.formatted_html())
 

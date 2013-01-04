@@ -1,9 +1,12 @@
+#!/usr/bin/env python2
+# -* coding: utf-8 -*-
+
 import os
 import time
-from PySide.QtCore import QObject, Signal
 from threading import Thread
 from subprocess import *
 from yelib.util import enum
+from PySide.QtCore import QObject, Signal
 
 OutputType = enum(
     'NOTIFY', 'OUTPUT', 'ERROR', 'WARN', 'INFO',
@@ -53,6 +56,9 @@ class CmdTask(QObject):
     def inst(self, hdlr):
         self._sig.connect(hdlr)
 
+    def uninst(self):
+        self._sig.disconnect()
+
     def send(self, out, lvl=OutputType.INFO):
         if self.debug_lvl >= lvl:
             self._sig.emit(TaskOutput(out, lvl))
@@ -92,6 +98,7 @@ class CmdWorker(Thread):
         self._continue = False
 
     def run(self):
+        ret = 0
         try:
             popen_args = {
                 'args': self._task.args,
@@ -109,13 +116,15 @@ class CmdWorker(Thread):
                     break
                 self._task.emitOutput(line.rstrip())
             if self._continue:
-                self._task.emitInfo(u'END: {}'.format(cmdline))
+                self._task.emitInfo(u'END: {}'.format(self._task.args[0]))
             else:
                 p.terminate()
                 p.wait()
                 self._task.emitWarn(u'TERMINITED: {}'.format(cmdline))
         except Exception as ex:
             self._task.emitError(unicode(ex))
+            ret = -1
         finally:
-            self._task.emitNotify('EXIT')
+            self._task.emitNotify('EXIT ' + str(ret))
+            self._task.uninst()
 
