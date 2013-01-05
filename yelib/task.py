@@ -1,178 +1,171 @@
-import Queue
+#!/usr/bin/env python2
+# -* coding: utf-8 -*-
+
+import os
+import time
 from threading import Thread
-from yelib.util import singleton, coroutine
-from PySide import QtCore
+from subprocess import *
+from yelib.util import enum
+from PySide.QtCore import QObject, Signal
+
+OutputType = enum(
+    'NOTIFY', 'OUTPUT', 'ERROR', 'WARN', 'INFO',
+    'DEBUG', 'DEBUG1', 'DEBUG2', 'DEBUG3', 'DEBUG4'
+    )
+
+class TaskOutput(object):
+    num = 0
+
+    def __init__(self, output=None, tp=OutputType.INFO):
+        TaskOutput.num += 1
+        self.no = TaskOutput.num
+        if output is None:
+            TaskOutput.num = 0
+        self.output = output
+        self.type = tp
+        self.typestr = OutputType.reverse_mapping[tp]
+        self.logtime = time.strftime('%H:%M:%S')
+
+    def formatted(self):
+        return u"{} [{:6s}] {}".format(
+                self.logtime, self.typestr, self.output)
+    def formatted_html(self):
+        color = 'green'
+        if self.type == OutputType.ERROR:
+            color = 'red'
+        elif self.type == OutputType.WARN:
+            color = 'orange'
+        elif self.type >= OutputType.DEBUG:
+            color = 'gray'
+        return (u"<span style='color:gray;'>{}</span> "
+                u"<span style='color:{};font-weight:bold;'>"
+                u"[{:6s}]</span> {}".format(
+                    self.logtime, color, self.typestr, self.output) )
 
 
-class Task(object):
+class Task(QObject):
     _id = 0
+    _sig = Signal(TaskOutput)
 
-    def __init__(self, func, handlers=[], *args, **kwargs):
+    def __init__(self, *args, **kwargs):
         Task._id += 1
         self.id = Task._id
-        self.func = func
-        self.handlers = handlers
         self.args = args
         self.kwargs = kwargs
-        self.taskq = None
+        self.debug_lvl = kwargs.get('debug_lvl', OutputType.INFO)
+        self.terminate = False
+        QObject.__init__(self)
 
-    def register(self, taskq):
-        self.taskq = taskq
+    def inst(self, hdlr):
+        self._sig.connect(hdlr)
 
-    def unregister(self, taskq):
-        try:
-            self.taskq.get_nowait(self)
-        except Queue.Empty:
-            pass
-        self.taskq = None
+    def uninst(self):
+        self._sig.disconnect()
 
-    def run(self):
-        if self.taskq is not None:
-            self.taskq.put(self)
+    def _send(self, out, lvl=OutputType.INFO):
+        if self.debug_lvl >= lvl:
+            self._sig.emit(TaskOutput(out, lvl))
+
+    def emitNotify(self, out):
+        self._send(out, OutputType.NOTIFY)
+    def emitOutput(self, out):
+        self._send(out, OutputType.OUTPUT)
+    def emitError(self, out):
+        self._send(out, OutputType.ERROR)
+    def emitWarn(self, out):
+        self._send(out, OutputType.WARN)
+    def emitInfo(self, out):
+        self._send(out, OutputType.INFO)
+    def emitDebug(self, out):
+        self._send(out, OutputType.DEBUG)
+    def emitDebug1(self, out):
+        self._send(out, OutputType.DEBUG1)
+    def emitDebug2(self, out):
+        self._send(out, OutputType.DEBUG2)
+    def emitDebug3(self, out):
+        self._send(out, OutputType.DEBUG3)
+    def emitDebug4(self, out):
+        self._send(out, OutputType.DEBUG4)
 
 
-class WorkThread(Thread):
+# Base class of worker
+class Worker(Thread):
 
-    def __init__(self):
-        Thread.__init__(self)
+    def __init__(self, task):
+        self._task = task
         self._continue = True
+        self._alive = True
+        Thread.__init__(self)
         self.start()
 
     def stop(self):
         self._continue = False
+    def stop_wait(self):
+        self.stop()
+        self.join()
+
+    def is_alive(self):
+        return self._alive
 
     def _run(self):
         pass
+
     def _cleanup(self):
-        pass
+        self._task.uninst()
+        self._alive = False
 
     def run(self):
-        while True:
-            try:
-                if not self._continue:
-                    self._cleanup()
-                    break
-                self._run()
-            except Exception as ex:
-                print ex
+        while self._continue:
+            self._run()
+        self._cleanup()
 
-class Worker(WorkThread):
 
-    def __init__(self):
-        self._todo_list = Queue.Queue()
-        #self.deliver = Deliver()
-        WorkThread.__init__(self)
+class FuncWorker(Worker):
 
-    def exit(self):
-        #self.deliver.stop()
+    def _run(self):
+        self._task.args[0](*self._task.args[1:], **self._task.kwargs)
         self.stop()
 
-    def add(self, task):
-        task.register(self._todo_list)
 
-    def remove(self, task):
-        task.unregister()
+class CmdWorker(Worker):
 
-    #def _cleanup(self):
-    #    try:
-    #        while True:
-    #            t = self._todo_list.get_nowait()
-    #            self.deliver.remove(t.id)
-    #    except Queue.Empty:
-    #        pass
+    def __init__(self, task, interval=-1):
+        self._code = 0
+        self._interval = interval
+        Worker.__init__(self, task)
 
     def _run(self):
         try:
-            i = 0
-            t = self._todo_list.get(timeout=0.1)
-            try:
-                for msg in t.func(*t.args, **t.kwargs):
-                    #self.deliver.send(t.id, msg)
-                    for hdlr in t.handlers:
-                        invoke_in_main_thread(hdlr, i, msg)
-                    i += 1
-            except Exception as ex:
-                for hdlr in t.handlers:
-                    invoke_in_main_thread(hdlr, i, ('ERROR', unicode(ex)))
-                raise
-            for hdlr in t.handlers:
-                invoke_in_main_thread(hdlr)
-            #self.deliver.send(t.id, None)
-        except Queue.Empty:
-            pass
-
-class InvokeEvent(QtCore.QEvent):
-    EVENT_TYPE = QtCore.QEvent.Type(QtCore.QEvent.registerEventType())
-
-    def __init__(self, fn, *args, **kwargs):
-        QtCore.QEvent.__init__(self, InvokeEvent.EVENT_TYPE)
-        self.fn = fn
-        self.args = args
-        self.kwargs = kwargs
-
-class Invoker(QtCore.QObject):
-    def event(self, event):
-        event.fn(*event.args, **event.kwargs)
-        return True
-
-_invoker = Invoker()
-def invoke_in_main_thread(fn, *args, **kwargs):
-    QtCore.QCoreApplication.postEvent(_invoker,
-        InvokeEvent(fn, *args, **kwargs))
-
-
-@singleton
-class Deliver(WorkThread):
-
-    def __init__(self):
-        self._mail_box = Queue.Queue()
-        self._task_list = {}
-        WorkThread.__init__(self)
-
-    def send(self, tid, msg):
-        self._mail_box.put( {'tid':tid, 'msg':msg} )
-
-    def add(self, tid, target):
-        self._task_list.setdefault(tid, set()).add(target)
-
-    def remove(self, tid, target=None):
-        try:
-            if target is not None:
-                self._task_list[tid].remove(target)
+            popen_args = {
+                'args': self._task.args,
+                'stdout': PIPE,
+                'stderr': STDOUT,
+                }
+            if os.name != 'posix':
+                popen_args['shell'] = True
+            p = Popen(**popen_args)
+            cmdline = ' '.join(self._task.args)
+            self._task.emitInfo(u'START: {} ...'.format(cmdline))
+            while self._continue:
+                line = p.stdout.readline()
+                if line == "":
+                    break
+                self._task.emitOutput(line.rstrip())
+            if self._continue:
+                self._task.emitInfo(u'END: {}'.format(self._task.args[0]))
             else:
-                targets = self._task_list.pop(tid)
-                for t in targets:
-                    t.close()
-        except KeyError:
-            pass
+                p.terminate()
+                p.wait()
+                self._task.emitWarn(u'TERMINITED: {}'.format(cmdline))
+        except Exception as ex:
+            self._task.emitError(unicode(ex))
+            self._code = -1
+        finally:
+            self._task.emitNotify('EXIT ' + str(self._code))
 
-    def _run(self):
-        try:
-            m = self._mail_box.get(timeout=0.1)
-            for target in self._task_list[m['tid']]:
-                try:
-                    target.send(m['msg'])
-                    #msg = m['msg']
-                    #if msg is None:
-                    #   target.close()
-                    #else:
-                    #    target.send(msg)
-                except StopIteration:
-                    pass
-        except Queue.Empty:
-            pass
+        if self._interval < 0:
+        	self.stop()
+        if self._continue and self._interval > 0:
+            time.sleep(self._interval)
 
 
-#class Subscriber(object):
-#
-#    # TODO: What if too many subscribers, need to close hdlr elegantly
-#
-#    def __init__(self, hdlr):
-#        self.hdlr = hdlr
-#        self.deliver = Deliver()
-#
-#    def subscribe(self, task):
-#        self.deliver.add(task.id, self.hdlr)
-#
-#    def unsubscribe(self, task):
-#        self.deliver.remove(task.id, self.hdlr)

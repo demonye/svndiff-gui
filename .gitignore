@@ -44,3 +44,7 @@ logdict*.log
 settings
 sshkey
 hdiff
+# virtualenv
+Scripts
+Lib
+Include
