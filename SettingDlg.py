@@ -20,7 +20,7 @@ class SettingDlg(QWidget):
             self.config = {}
 
         # ==== Source Settings ====
-        self.grpSource = QGroupBox(u'Path of your source code')
+        self.grpSource = QGroupBox(u'Set Your Code')
         self.txtSvnId = QLineEdit(self.conf('svnid'))
         #self.txtSvnCmd = QLineEdit(self.conf('svncmd'))
         self.txtSrcDir = QLineEdit(self.conf('srcdir'))
@@ -36,7 +36,7 @@ class SettingDlg(QWidget):
         # ==== Source Settings ====
 
         # ==== Server Settings ====
-        self.grpServer = QGroupBox(u'Server to upload diff')
+        self.grpServer = QGroupBox(u'Upload Diff To Server')
         self.txtSrvHost = QLineEdit(self.conf('srvhost'))
         self.txtSrvUser = QLineEdit(self.conf('srvuser'))
         self.txtSrvPwd = QLineEdit(self.conf('srvpwd'))

@@ -48,8 +48,7 @@ class DiffTab(QWidget):
         self.lbSlikSvn = QLabel(
                 u"<span style='color:dimgray'>"
                 u"If you are using Windows, please install "
-                u"<a href='http://www.sliksvn.com/en/download'>Slik SVN</a>.<br/>"
-                u"Before you go ahead, set the path of your source code in Setting Tab</span>"
+                u"<a href='http://www.sliksvn.com/en/download'>Slik SVN</a> first.</span>"
                 )
         self.lbSlikSvn.setTextFormat(Qt.RichText)
         self.lbSlikSvn.setOpenExternalLinks(True)
@@ -97,6 +96,10 @@ class DiffTab(QWidget):
             self.appendLog(TaskOutput(u"Hdiff directory not exists!", OutputType.WARN))
 
     def getStatus(self):
+        srcdir = self.setting.txtSrcDir.text()
+        if srcdir == "":
+            self.appendLog(TaskOutput(u'Please set the path of source code in Setting Tab!', OutputType.WARN))
+            return
         self.btnFind.setDisabled(True)
         cmds = ["svndiff", "-c", "-s", self.setting.txtSrcDir.text()]
         task = Task(*cmds)

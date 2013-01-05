@@ -30,7 +30,7 @@ class MainWindow(QWidget):
         # ==== Tab Widget ====
 
         # ==== Log ====
-        self.grpLog = QGroupBox(u'Log')
+        self.grpLog = QGroupBox(u'Information of Execution')
         self.txtLog = QTextBrowser()
         self.txtLog.setReadOnly(True)
         self.txtLog.setMinimumHeight(150)
