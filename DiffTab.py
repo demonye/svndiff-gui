@@ -9,7 +9,6 @@ from yelib.qt.layout import *
 from yelib.task import *
 from yelib.util import force_rmdir
 from paramiko import SSHClient, AutoAddPolicy
-from threading import Thread
 
 import locale
 coding = locale.getdefaultlocale()[1]

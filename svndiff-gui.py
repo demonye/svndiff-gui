@@ -8,6 +8,7 @@ from yelib.qt.layout import *
 import cPickle as pk
 
 from DiffTab import DiffTab
+from ClassTab import ClassTab
 from SettingDlg import SettingDlg
 
 __version__ = "1.1"
@@ -60,11 +61,11 @@ class MainArea(QWidget):
         self.tab = QTabWidget()
         self.tabSetting = SettingDlg(self)
         self.tabDiff = DiffTab(self)
+        self.tabClass = ClassTab(self)
         self.tab.addTab(self.tabDiff, u'Make Diff')
-        self.tab.addTab(QWidget(), u'Replace Class File')
+        self.tab.addTab(self.tabClass, u'Replace Class File')
         self.tab.addTab(self.tabSetting, u'Setting')
-        self.tab.setTabEnabled(1, False)
-        self.tab.setMinimumSize(700, 350)
+        self.tab.setMinimumSize(700, 400)
         # ==== Tab Widget ====
 
         # ==== Log ====
