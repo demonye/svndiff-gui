@@ -42,7 +42,6 @@ class DiffTab(QWidget):
         self.txtBugId.setMaximumWidth(120)
         self.btnFind = QPushButton(u'Get Status')
         self.btnDiff = QPushButton(u'Make Diff')
-        self.btnOpenHdiff = QPushButton(u'Open Hdiff')
         self.btnUpload = QPushButton(u'Upload')
         self.lstFiles = tb
         self.lbSlikSvn = QLabel(
@@ -52,10 +51,11 @@ class DiffTab(QWidget):
                 )
         self.lbSlikSvn.setTextFormat(Qt.RichText)
         self.lbSlikSvn.setOpenExternalLinks(True)
+        
         self.lt = yBoxLayout([
             [ ('', self.lstFiles) ],
             [ ('', self.lbSlikSvn) ],
-            [ ('', self.btnFind), ('', self.btnDiff), ('', self.btnOpenHdiff), None,
+            [ ('', self.btnFind), ('', self.btnDiff), None,
               ('', QLabel(u'Bug Id')), ('', self.txtBugId),
               ('', self.btnUpload),
             ],
@@ -71,7 +71,6 @@ class DiffTab(QWidget):
         self.sshtask = None
         self.btnFind.clicked.connect(self.getStatus)
         self.btnDiff.clicked.connect(self.makeDiff)
-        self.btnOpenHdiff.clicked.connect(self.openHdiff)
         self.btnUpload.clicked.connect(self.uploadFiles)
 
 
@@ -88,20 +87,19 @@ class DiffTab(QWidget):
         	w.stop_wait()
         event.accept()
 
-    def openHdiff(self):
-        hdiff_dir = os.path.join(os.getcwdu(), "hdiff")
-        if os.path.exists(hdiff_dir):
-            os.startfile(hdiff_dir)
-        else:
-            self.appendLog(TaskOutput(u"Hdiff directory not exists!", OutputType.WARN))
+    def showLoading(self, msg, loading=True):
+        self.parent.parent().showLoading(msg, loading)
+
 
     def getStatus(self):
         srcdir = self.setting.txtSrcDir.text()
         if srcdir == "":
             self.appendLog(TaskOutput(u'Please set the path of source code in Setting Tab!', OutputType.WARN))
             return
+        srcdir = self.setting.txtSrcDir.text()
         self.btnFind.setDisabled(True)
-        cmds = ["svndiff", "-c", "-s", self.setting.txtSrcDir.text()]
+        self.showLoading(u'Getting svn status of ' + srcdir, True)
+        cmds = ["svndiff", "-c", "-s", srcdir]
         task = Task(*cmds)
         task.inst(self.showChangedFiles)
 
@@ -113,6 +111,7 @@ class DiffTab(QWidget):
     @Slot(TaskOutput)
     def showChangedFiles(self, msg):
         if msg.type == OutputType.NOTIFY and msg.output.startswith('EXIT '):
+            self.showLoading('', False)
             self.btnFind.setDisabled(False)
             return
         if msg.type == OutputType.OUTPUT and msg.output:
@@ -136,14 +135,16 @@ class DiffTab(QWidget):
 
 
     def makeDiff(self):
+        srcdir = self.setting.txtSrcDir.text()
         self.btnDiff.setDisabled(True)
+        self.showLoading(u'Making diff files of ' + srcdir, True)
         files = []
         tb = self.lstFiles
         for i in xrange(tb.rowCount()):
             item = tb.item(i, 0)
             if item.checkState() == Qt.Checked:
                 files.append(tb.item(i, 4).text())
-        cmds = ["svndiff", "-s", self.setting.txtSrcDir.text()] + files
+        cmds = ["svndiff", "-s", srcdir] + files
         task = Task(*cmds)
         task.inst(self.readyToUpload)
         self.workers['diff'] = CmdWorker(task)
@@ -151,7 +152,9 @@ class DiffTab(QWidget):
     @Slot(TaskOutput)
     def readyToUpload(self, msg):
         if msg.type == OutputType.NOTIFY and msg.output.startswith('EXIT '):
-            self.appendLog(TaskOutput(u"Click <span style='color:green;font-weight:bold;'>Open Hdiff</span> button to review the result!"))
+            hdiff_dir = os.path.join(os.getcwdu(), "hdiff").replace(os.sep, '/')
+            self.appendLog(TaskOutput(u"Go to <a href='{}'>HDIFF Directory</a> to check the result.".format(hdiff_dir)))
+            self.showLoading('', False)
             self.btnDiff.setDisabled(False)
             return
         self.appendLog(msg)
@@ -161,14 +164,16 @@ class DiffTab(QWidget):
             self.appendLog(TaskOutput(u"!!! Please input Bug Id !!!", OutputType.WARN))
             return
 
-        self.btnUpload.setDisabled(True)
         st = self.setting
+        rmtdir = st.txtRmtDir.text()
+        self.btnUpload.setDisabled(True)
+        self.showLoading(u'Uploading diff files to ' + rmtdir, True)
         bugid = self.txtBugId.text()
         svnid = st.txtSvnId.text()
         if svnid == "":
             svnid = "yanpeng.wang"
         self.result_url = "{}/{}/{}".format(st.txtHttpUrl.text().rstrip('/'), svnid, bugid)
-        rmtdir = os.path.join(st.txtRmtDir.text(), svnid, bugid).replace(os.sep, '/')
+        rmtdir = os.path.join(rmtdir, svnid, bugid).replace(os.sep, '/')
 
         sshargs = {
             'hostname': st.txtSrvHost.text(),
@@ -225,8 +230,9 @@ class DiffTab(QWidget):
             code = int(msg.output.split()[1])
             if code == 0:
                 self.appendLog(TaskOutput(
-                    u"*** Click <a href='{}'>Here</a> to check the result ***".format(
+                    u"Click <a href='{0}'>{0}</a> to review the result.".format(
                         self.result_url)))
+            self.showLoading('', False)
             self.btnUpload.setDisabled(False)
             self.sshworker = None
             return

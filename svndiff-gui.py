@@ -12,10 +12,46 @@ from SettingDlg import SettingDlg
 
 __version__ = "1.1"
 
-class MainWindow(QWidget):
+
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super(MainWindow, self).__init__() 
+
+        self.main = MainArea(self)
+        self.setCentralWidget(self.main)
+
+        #self.settingAct = QAction(QIcon("menu_bt_settings.png"), "&Setting", self)
+        #self.settingToolBar = self.addToolBar("Setting")
+        #self.settingToolBar.addAction(self.settingAct)
+        self.lbLoadingText = QLabel()
+        self.lbLoadingGif = QLabel()
+        self.lbLoadingGif.hide()
+        movie = QMovie("loading-small.gif")
+        movie.start()
+        self.lbLoadingGif.setMovie(movie)
+        self.statusBar()
+        self.statusBar().addWidget(self.lbLoadingText)
+        self.statusBar().addWidget(self.lbLoadingGif)
+        self.setStyleSheet("QStatusBar::item {border-style:flat;}")
+
+    def center(self):
+        self.move(
+            QApplication.desktop().screen().rect().center() -
+            self.rect().center() )
+
+    def closeEvent(self, event):
+        self.main.close()
+        event.accept()
+
+    def showLoading(self, msg, loading=True):
+        self.lbLoadingText.setText(msg)
+        #self.statusBar().showMessage(msg)
+        self.lbLoadingGif.setVisible(loading)
+
+class MainArea(QWidget):
 
     def __init__(self, parent=None):
-        super(MainWindow, self).__init__(parent)
+        super(MainArea, self).__init__(parent)
         self.setFont(QFont("Monospace", 10))
 
         # ==== Tab Widget ====
@@ -36,7 +72,7 @@ class MainWindow(QWidget):
         self.txtLog.setMinimumHeight(150)
         self.txtLog.setOpenExternalLinks(True)
         self.ltLog = yBoxLayout([
-            [ ('', self.txtLog) ]
+            [ ('', self.txtLog) ],
         ])
         self.grpLog.setLayout(self.ltLog)
         # ==== Log ====
@@ -47,15 +83,15 @@ class MainWindow(QWidget):
         splitter.setChildrenCollapsible(False)
         splitter.addWidget(self.tab)
         splitter.addWidget(self.grpLog)
-        self.btnExit = QPushButton(u'Exit')
+        #self.btnExit = QPushButton(u'Exit')
         self.lt = yBoxLayout([
             [ ('', splitter) ],
-            [ None, ('', self.btnExit) ],
         ])
-        self.btnExit.clicked.connect(self.close)
+        #self.btnExit.clicked.connect(self.close)
         self.setLayout(self.lt)
         self.setWindowTitle('Svn Tool')
         self.setWindowIcon(QIcon('logo.png'))
+        self.setStyleSheet("QTextBrowser {border-style:flat;background:lightyellow;}")
         # ==== Main Layout ====
 
     def center(self):
@@ -72,8 +108,7 @@ class MainWindow(QWidget):
         event.accept()
 
     def append_log(self, logtext=''):
-        #self.txtLog.appendPlainText(logtext)
-        self.txtLog.append(logtext) #+"<img src='loading.gif'/>")
+        self.txtLog.append(logtext)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
