@@ -152,8 +152,10 @@ class DiffTab(QWidget):
     @Slot(TaskOutput)
     def readyToUpload(self, msg):
         if msg.type == OutputType.NOTIFY and msg.output.startswith('EXIT '):
-            hdiff_dir = os.path.join(os.getcwdu(), "hdiff").replace(os.sep, '/')
-            self.appendLog(TaskOutput(u"Go to <a href='{}'>HDIFF Directory</a> to check the result.".format(hdiff_dir)))
+            code = int(msg.output.split()[1])
+            if code == 0:
+                hdiff_dir = os.path.join(os.getcwdu(), "hdiff").replace(os.sep, '/')
+                self.appendLog(TaskOutput(u"Go to <a href='{}'>HDIFF Directory</a> to check the result.".format(hdiff_dir)))
             self.showLoading('', False)
             self.btnDiff.setDisabled(False)
             return

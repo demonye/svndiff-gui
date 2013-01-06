@@ -33,6 +33,8 @@ class MainWindow(QMainWindow):
         self.statusBar().addWidget(self.lbLoadingText)
         self.statusBar().addWidget(self.lbLoadingGif)
         self.setStyleSheet("QStatusBar::item {border-style:flat;}")
+        self.setWindowTitle('Svn Tool')
+        self.setWindowIcon(QIcon('logo.png'))
 
     def center(self):
         self.move(
@@ -89,8 +91,6 @@ class MainArea(QWidget):
         ])
         #self.btnExit.clicked.connect(self.close)
         self.setLayout(self.lt)
-        self.setWindowTitle('Svn Tool')
-        self.setWindowIcon(QIcon('logo.png'))
         self.setStyleSheet("QTextBrowser {border-style:flat;background:lightyellow;}")
         # ==== Main Layout ====
 
