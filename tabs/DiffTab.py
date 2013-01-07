@@ -237,7 +237,6 @@ class DiffTab(BaseTab):
                         self.result_url)))
             self.showLoading('', False)
             self.btnUpload.setDisabled(False)
-            self.sshworker = None
             return
         self.appendLog(msg)
 

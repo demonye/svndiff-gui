@@ -97,8 +97,9 @@ class SettingsTab(BaseTab):
               ('', QLabel(u'Http URL'),1,1,'r'), ('', self.txtHttpUrl,1,2) ],
             [ ('', self.rdoPwd), ('', self.txtSrvPwd),
               ('', self.rdoKey), ('', self.txtKeyFile), ('', self.btnKeyFile) ],
+            [ ('', QLabel(' '),1,1) ],
             [ ('', QLabel('Svn Account'),1,1,'r'), ('', self.txtSvnId) ],
-            [ ('', QLabel('Password'),1,1,'r'), ('', self.txtSvnPwd) ],
+            [ ('', QLabel('Svn Password'),1,1,'r'), ('', self.txtSvnPwd) ],
         ])
         #self.txtSrvUser.setMaximumWidth(100)
         grp.setLayout(lt)

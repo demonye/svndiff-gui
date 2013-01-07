@@ -18,9 +18,6 @@ class MainWindow(QMainWindow):
         self.main = MainArea(self)
         self.setCentralWidget(self.main)
 
-        #self.settingAct = QAction(QIcon("menu_bt_settings.png"), "&Setting", self)
-        #self.settingToolBar = self.addToolBar("Setting")
-        #self.settingToolBar.addAction(self.settingAct)
         self.lbLoadingText = QLabel()
         self.lbLoadingGif = QLabel()
         self.lbLoadingGif.hide()
