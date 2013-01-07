@@ -2,25 +2,20 @@
 # -* coding: utf-8 -*-
 
 import os
-import time
 from PySide.QtCore import *
 from PySide.QtGui import *
 from yelib.qt.layout import *
 from yelib.task import *
-from yelib.util import force_rmdir
 from paramiko import SSHClient, AutoAddPolicy
+from tabs.BaseTab import BaseTab
 
-import locale
-coding = locale.getdefaultlocale()[1]
 
-class DiffTab(QWidget):
+class DiffTab(BaseTab):
 
     def __init__(self, parent=None):
-        QWidget.__init__(self, parent)
-        self.parent = parent
-        self.setting = parent.tabSetting
+        super(DiffTab, self).__init__(parent)
 
-        self.setFont(QFont("Monospace", 10))
+        # ==== File List ====
         tb = QTableWidget()
         tb.setColumnCount(5)
         tb.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -36,22 +31,29 @@ class DiffTab(QWidget):
         tb.horizontalHeader().hide()
         tb.verticalHeader().hide()
         tb.setAlternatingRowColors(True)
+        self.lstFiles = tb
+        # ==== File List ====
 
+        self.txtSrcDir = QLineEdit()
+        self.btnSrcDir = QPushButton(' / ')
+        self.btnSrcDir.setFixedWidth(20)
+        self.btnSrcDir.clicked.connect(self.selectSrcDir)
         self.txtBugId = QLineEdit()
         self.txtBugId.setMaximumWidth(120)
         self.btnFind = QPushButton(u'Get Status')
         self.btnDiff = QPushButton(u'Make Diff')
         self.btnUpload = QPushButton(u'Upload')
-        self.lstFiles = tb
         self.lbSlikSvn = QLabel(
                 u"<span style='color:dimgray'>"
                 u"If you are using Windows, please install "
-                u"<a href='http://www.sliksvn.com/en/download'>Slik SVN</a> first.</span>"
+                u"<a href='http://www.sliksvn.com/en/download'>"
+                u"Slik SVN</a> first.</span>"
                 )
         self.lbSlikSvn.setTextFormat(Qt.RichText)
         self.lbSlikSvn.setOpenExternalLinks(True)
         
         self.lt = yBoxLayout([
+            [ ('', QLabel(u'Source Path')), ('', self.txtSrcDir), ('', self.btnSrcDir) ],
             [ ('', self.lstFiles) ],
             [ ('', self.lbSlikSvn) ],
             [ ('', self.btnFind), ('', self.btnDiff), None,
@@ -72,9 +74,13 @@ class DiffTab(QWidget):
         self.btnDiff.clicked.connect(self.makeDiff)
         self.btnUpload.clicked.connect(self.uploadFiles)
 
+    def selectSrcDir(self):
+        srcdir = self.txtSrcDir
+        dirname = QFileDialog.getExistingDirectory(
+                self, u'Select Source Directory', srcdir.text())
+        if len(dirname) > 0:
+            srcdir.setText(dirname)
 
-    def conf(self, key):
-        return self.setting.conf(key)
 
 #    def showEvent(self, event):
 #        event.accept()
@@ -86,16 +92,12 @@ class DiffTab(QWidget):
         	w.stop_wait()
         event.accept()
 
-    def showLoading(self, msg, loading=True):
-        self.parent.parent().showLoading(msg, loading)
-
-
     def getStatus(self):
-        srcdir = self.setting.txtSrcDir.text()
+        srcdir = self.txtSrcDir.text()
         if srcdir == "":
             self.appendLog(TaskOutput(u'Please set the path of source code in Setting Tab!', OutputType.WARN))
             return
-        srcdir = self.setting.txtSrcDir.text()
+        srcdir = self.txtSrcDir.text()
         self.btnFind.setDisabled(True)
         self.showLoading(u'Getting svn status of ' + srcdir, True)
         cmds = ["svndiff", "-c", "-s", srcdir]
@@ -134,7 +136,7 @@ class DiffTab(QWidget):
 
 
     def makeDiff(self):
-        srcdir = self.setting.txtSrcDir.text()
+        srcdir = self.txtSrcDir.text()
         self.btnDiff.setDisabled(True)
         self.showLoading(u'Making diff files of ' + srcdir, True)
         files = []
@@ -165,7 +167,7 @@ class DiffTab(QWidget):
             self.appendLog(TaskOutput(u"!!! Please input Bug Id !!!", OutputType.WARN))
             return
 
-        st = self.setting
+        st = self.settings
         rmtdir = st.txtRmtDir.text()
         self.btnUpload.setDisabled(True)
         self.showLoading(u'Uploading diff files to ' + rmtdir, True)
@@ -177,7 +179,7 @@ class DiffTab(QWidget):
         rmtdir = os.path.join(rmtdir, svnid, bugid).replace(os.sep, '/')
 
         sshargs = {
-            'hostname': st.txtSrvHost.text(),
+            'hostname': st.txtDiffSrv.text(),
             'username': st.txtSrvUser.text(),
             'timeout' : 10,
             'compress': True,
@@ -239,13 +241,4 @@ class DiffTab(QWidget):
             return
         self.appendLog(msg)
 
-
-    def appendLog(self, log):
-        if log.type == OutputType.NOTIFY:
-            return
-        pt = self.parent
-        if log.type == OutputType.OUTPUT:
-            pt.append_log(log.output.decode(coding))
-        else:
-            pt.append_log(log.formatted_html())
 

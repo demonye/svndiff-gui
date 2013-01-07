@@ -6,10 +6,7 @@ from PySide.QtCore import *
 from PySide.QtGui import *
 from yelib.qt.layout import *
 import cPickle as pk
-
-from DiffTab import DiffTab
-from ClassTab import ClassTab
-from SettingDlg import SettingDlg
+from tabs import *
 
 __version__ = "1.1"
 
@@ -59,13 +56,14 @@ class MainArea(QWidget):
 
         # ==== Tab Widget ====
         self.tab = QTabWidget()
-        self.tabSetting = SettingDlg(self)
         self.tabDiff = DiffTab(self)
         self.tabClass = ClassTab(self)
+        self.tabSettings = SettingsTab(self)
         self.tab.addTab(self.tabDiff, u'Make Diff')
         self.tab.addTab(self.tabClass, u'Replace Class File')
-        self.tab.addTab(self.tabSetting, u'Setting')
+        self.tab.addTab(self.tabSettings, u'Settings')
         self.tab.setMinimumSize(700, 400)
+        self.tab.currentChanged.connect(self.tab_changed)
         # ==== Tab Widget ====
 
         # ==== Log ====
@@ -111,6 +109,12 @@ class MainArea(QWidget):
     def append_log(self, logtext=''):
         self.txtLog.append(logtext)
 
+    def tab_changed(self, idx):
+        if self.tab.currentWidget() == self.tabSettings:
+        	self.grpLog.hide()
+        else:
+        	self.grpLog.show()
+ 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     win = MainWindow()

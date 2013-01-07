@@ -51,13 +51,15 @@ class yGridLayout(QGridLayout, yLayout):
                 cell = row[j]
                 if cell is None:
                     continue
-                (n, m) = cell[0:2]
-                (c, l, a) = (
+                (name, item) = cell[0:2]
+                (rowspan, colspan, align) = (
                     cell[2] if len(cell)>2 else 1,
                     cell[3] if len(cell)>3 else 1,
                     cell[4] if len(cell)>4 else None,
                 )
-                self._add(self, n, m, i, j, c, l, self.align(a))
+                self._add(self, name, item, i, j,
+                        rowspan, colspan,
+                        self.align(align))
 
 
 class yBoxLayout(QVBoxLayout, yLayout):
