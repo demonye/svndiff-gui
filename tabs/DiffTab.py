@@ -5,7 +5,8 @@ import os
 from PySide.QtCore import *
 from PySide.QtGui import *
 from yelib.qt.layout import *
-from yelib.task import *
+#from yelib.task import *
+from yelib.newtask import *
 from paramiko import SSHClient, AutoAddPolicy
 from tabs.BaseTab import BaseTab
 
@@ -68,8 +69,9 @@ class DiffTab(BaseTab):
                 'M': QIcon('filemodify.png'),
                 'D': QIcon('filedelete.png'),
                 }
-        self.workers = {}
-        self.sshtask = None
+        self.worker = Worker()
+        #self.workers = {}
+        #self.sshtask = None
         self.btnFind.clicked.connect(self.getStatus)
         self.btnDiff.clicked.connect(self.makeDiff)
         self.btnUpload.clicked.connect(self.uploadFiles)
@@ -86,10 +88,11 @@ class DiffTab(BaseTab):
 #        event.accept()
 
     def closeEvent(self, event):
-        if self.sshtask:
-            self.sshtask.terminate = True
-        for w in self.workers.values():
-        	w.stop_wait()
+        #if self.sshtask:
+        #    self.sshtask.terminate = True
+        #for w in self.workers.values():
+        #	w.stop_wait()
+        self.worker.stop()
         event.accept()
 
     def getStatus(self):
@@ -97,17 +100,15 @@ class DiffTab(BaseTab):
         if srcdir == "":
             self.appendLog(TaskOutput(u'Please set the path of source code in Setting Tab!', OutputType.WARN))
             return
-        srcdir = self.txtSrcDir.text()
         self.btnFind.setDisabled(True)
         self.showLoading(u'Getting svn status of ' + srcdir, True)
-        cmds = ["svndiff", "-c", "-s", srcdir]
-        task = Task(*cmds)
-        task.inst(self.showChangedFiles)
-
+        self.worker.add_task(
+                CmdTask("svndiff", "-c", "-s", srcdir),
+                TaskHandler(self.showChangedFiles)
+                )
         tb = self.lstFiles
         for i in xrange(tb.rowCount()):
             tb.removeRow(0)
-        self.workers['status'] = CmdWorker(task)
 
     @Slot(TaskOutput)
     def showChangedFiles(self, msg):
@@ -146,9 +147,9 @@ class DiffTab(BaseTab):
             if item.checkState() == Qt.Checked:
                 files.append(tb.item(i, 4).text())
         cmds = ["svndiff", "-s", srcdir] + files
-        task = Task(*cmds)
-        task.inst(self.readyToUpload)
-        self.workers['diff'] = CmdWorker(task)
+        self.worker.add_task(
+                CmdTask(*cmds),
+                TaskHandler(self.readyToUpload) )
 
     @Slot(TaskOutput)
     def readyToUpload(self, msg):
