@@ -7,6 +7,7 @@ from PySide.QtGui import *
 from yelib.qt.layout import *
 #from yelib.task import *
 from yelib.newtask import *
+from yelib.util import coroutine
 from paramiko import SSHClient, AutoAddPolicy
 from tabs.BaseTab import BaseTab
 
@@ -69,9 +70,7 @@ class DiffTab(BaseTab):
                 'M': QIcon('filemodify.png'),
                 'D': QIcon('filedelete.png'),
                 }
-        self.worker = Worker()
-        #self.workers = {}
-        #self.sshtask = None
+        self.worker = TaskWorker()
         self.btnFind.clicked.connect(self.getStatus)
         self.btnDiff.clicked.connect(self.makeDiff)
         self.btnUpload.clicked.connect(self.uploadFiles)
@@ -88,10 +87,6 @@ class DiffTab(BaseTab):
 #        event.accept()
 
     def closeEvent(self, event):
-        #if self.sshtask:
-        #    self.sshtask.terminate = True
-        #for w in self.workers.values():
-        #	w.stop_wait()
         self.worker.stop()
         event.accept()
 
@@ -190,20 +185,22 @@ class DiffTab(BaseTab):
         elif st.rdoKey.isChecked():
             sshargs['key_filename'] = st.txtKeyFile.text()
 
-        self.sshtask = Task(self._upload, rmtdir, **sshargs)
-        self.sshtask.inst(self.uploadHandler)
-        self.workers['ssh'] = FuncWorker(self.sshtask)
-
+        self.worker.add_task(
+                self._upload(rmtdir, **sshargs),
+                TaskHandler(self.uploadHandler)
+                )
 
     def _upload(self, dstdir, **sshargs):
         sshcli = SSHClient()
         sftpcli = None
         code = 0
-        self.sshtask.emitInfo(u'Conntecting to {} ...'.format(sshargs['hostname']))
+        (yield TaskOutput(u'Conntecting to %s ...' % sshargs['hostname']))
         try:
             sshcli.set_missing_host_key_policy(AutoAddPolicy())
             sshcli.connect(**sshargs)
-            self.sshtask.emitInfo(u'Connected, ready to upload ...')
+            running = (yield TaskOutput(u'Connected, ready to upload ...'))
+            if not running:
+                raise CommandTerminated()
             ret = sshcli.exec_command("[ -d {0} ] && rm -rf {0}; mkdir -p {0}".format(dstdir))
             errstr = ret[2].read()
             if errstr != '':
@@ -211,21 +208,25 @@ class DiffTab(BaseTab):
             sftpcli = sshcli.open_sftp()
             srcdir = "hdiff"
             for f in os.listdir(srcdir):
-                if self.sshtask.terminate:
-                    self.sshtask.emitInfo(u'Terminating ...')
-                    return
                 if f.lower().endswith('.html'):
                     localfile = os.path.join(srcdir, f)
                     remotefile = os.path.join(dstdir, f).replace(os.sep, '/')
-                    self.sshtask.emitInfo(u'Uploading ' + f + ' ...')
+                    running = (yield TaskOutput(u'Uploading %s ...' % f))
+                    if not running:
+                        raise CommandTerminated()
                     sftpcli.put(localfile, remotefile)
+        except CommandTerminated:
+            (yield TaskOutput(u'Uploading Terminited', OutputType.WARN))
+            try: p.terminate()
+            except: pass
+            p.wait()
         except Exception as ex:
-            self.sshtask.emitError(unicode(ex))
             code = -1
+            (yield TaskOutput(ex.message, OutputType.ERROR))
         finally:
             if sftpcli: sftpcli.close()
             sshcli.close()
-            self.sshtask.emitNotify('EXIT '+str(code))
+            (yield TaskOutput(u'EXIT %d' % code, OutputType.NOTIFY))
 
 
     @Slot(TaskOutput)

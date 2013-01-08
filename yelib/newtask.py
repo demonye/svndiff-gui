@@ -9,6 +9,7 @@ from subprocess import *
 from yelib.util import enum
 from PySide.QtCore import QObject, Signal
 import locale
+from yelib.util import coroutine
 
 OutputType = enum(
     'NOTIFY', 'OUTPUT', 'ERROR', 'WARN', 'INFO',
@@ -45,7 +46,7 @@ class TaskOutput(object):
                     self.logtime, color, self.typestr, self.output) )
 
 
-class Worker(object):
+class TaskWorker(object):
 
     def __init__(self, autostart=True, debug_level=OutputType.INFO):
         self._todo = Queue.Queue()
@@ -56,9 +57,9 @@ class Worker(object):
         if autostart:
         	self._workthd.start()
 
-    def __del__(self):
-        self.stop()
-        self._workthd.join()
+    #def __del__(self):
+    #    self.stop()
+    #    self._workthd.join()
 
     def start(self):
         self._workthd.start()
@@ -89,20 +90,23 @@ class Worker(object):
         while True:
             try:
                 task, hdlr = self._todo.get(timeout=0.1)
-                #print "get one task"
                 if type(task) == str and task == 'quit':
                     break
-                while self._task_run:
-                    self.resume_task()
-                    try:
-                        output = task.send(None)
+                output = task.next()
+                if hdlr and output.type <= self._dbg_lvl:
+                    hdlr.send(output) # For Qt app, emit signal
+                try:
+                    while True:
+                        self.resume_task()
+                        output = task.send(self._task_run)
                         if hdlr and output.type <= self._dbg_lvl:
-                            hdlr.send(output)
-                    except StopIteration:
-                        break
-                    finally:
+                            hdlr.send(output) # For Qt App, emit Signal
                         self.pause_task()
-                #task.close()
+                except StopIteration:
+                    pass
+                # Cause RuntimeError: 'generator ignored GeneratorExit'
+                # See http://mail.python.org/pipermail/python-dev/2006-August/068429.html
+                # task.close()
             except Queue.Empty:
                 pass
 
@@ -138,18 +142,22 @@ def CmdTask(*args):
         errmsg = p.stderr.read()
         if len(errmsg) > 0:
         	raise Exception(errmsg)
-        while True:
+        running = True
+        while running:
             line = p.stdout.readline()
             if line == "":
                 break
-            (yield TaskOutput(line.rstrip(), OutputType.OUTPUT))
+            running = (yield TaskOutput(line.rstrip(), OutputType.OUTPUT))
+        if not running:
+            raise CommandTerminated()
         (yield TaskOutput(u'END: %s' % args[0]))
-    except GeneratorExit:
-        p.terminate()
-        p.wait()
+    except CommandTerminated:
         (yield TaskOutput(u'TERMINITED: %s' % args[0], OutputType.WARN))
+        try: p.terminate()
+        except: pass
+        p.wait()
     except Exception as ex:
-        (yield TaskOutput(ex.message, OutputType.ERROR))
         code = -1
+        (yield TaskOutput(ex.message, OutputType.ERROR))
     finally:
         (yield TaskOutput(u'EXIT %d' % code, OutputType.NOTIFY))

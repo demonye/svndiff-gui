@@ -6,7 +6,7 @@ import time
 from PySide.QtCore import *
 from PySide.QtGui import *
 from yelib.qt.layout import *
-from yelib.task import *
+from yelib.newtask import *
 from paramiko import SSHClient, AutoAddPolicy
 from tabs.BaseTab import BaseTab
 
@@ -28,8 +28,7 @@ class ClassTab(BaseTab):
         self.setStyleSheet(
                 'QTableWidget {border:1px solid gray;}'
                 )
-        self.workers = {}
-        self.task = None
+        self.worker = TaskWorker()
 
     # ==== Source Group ====
     def createSourceGroup(self):
@@ -203,9 +202,6 @@ class ClassTab(BaseTab):
         return False
 
     def searchNewer(self):
-        if self.task and self.stopTask():
-            return
-
         mins = self.txtNewerMins.text()
         for i in xrange(self.tbSource.rowCount()):
             self.tbSource.removeRow(0)
@@ -215,24 +211,25 @@ class ClassTab(BaseTab):
         self.showLoading(u'Searching class files newer than {} mins'.format(mins), True)
 
         srcdir = self.txtSrcDir.text()
-        self.task = Task(self._searchNewer, srcdir)
-        self.task.inst(self.searchHandler)
-        self.workers['search'] = FuncWorker(self.task)
+        self.worker.add_task(
+                self._searchNewer(srcdir),
+                TaskHandler(self.searchHandler)
+                )
 
     def stopSearch(self):
-        if self.task:
-            self.task.terminate = True
+        self.worker.stop_task()
 
     def _searchNewer(self, srcdir):
         curtime = time.time()
         found = 0
         code = 0
         try:
+            (yield TaskOutput(u'Start searching ...'))
             for root,dirs,files in os.walk(srcdir):
                 for f in files:
-                    if self.task.terminate:
-                        self.task.emitInfo(u'Terminating ...')
-                        return
+                    running = (yield TaskOutput(u'Detect running', OutputType.NOTIFY))
+                    if not running:
+                        raise CommandTerminated()
                     fname = os.path.join(root, f)
                     ext = os.path.splitext(f)[1]
                     if ext.lower() != ".class":
@@ -240,34 +237,35 @@ class ClassTab(BaseTab):
                     mt = os.path.getmtime(fname)
                     secs = int(self.txtNewerMins.text()) * 60
                     if curtime - mt <= secs:
-                        self.task.emitNotify(('ADDFILE', fname, mt))
+                        (yield TaskOutput(('ADDFILE', fname, mt), OutputType.NOTIFY))
                         found += 1
-            self.task.emitInfo(u'Found {} files.'.format(found))
+            (yield TaskOutput(u'Found %s files.' % found))
+        except CommandTerminated:
+            (yield TaskOutput(u'TERMINITED: %s' % args[0], OutputType.WARN))
+            try: p.terminate()
+            except: pass
+            p.wait()
         except Exception as ex:
-            self.task.emitError(unicode(ex))
             code = -1
+            (yield TaskOutput(ex.message, OutputType.ERROR))
         finally:
-            self.task.emitNotify('EXIT '+str(code))
+            (yield TaskOutput(u'EXIT %d' % code, OutputType.NOTIFY))
 
     @Slot(TaskOutput)
     def searchHandler(self, msg):
         if msg.type == OutputType.NOTIFY:
             output = msg.output
-            if type(output) == str and output.startswith('EXIT '):
+            if type(output) == tuple and output[0] == 'ADDFILE':
+                self._addClassFile(output[1], output[2])
+            elif output.startswith('EXIT '):
                 self.showLoading('', False)
                 self.btnStopSrch.hide()
                 self.btnSearch.show()
-                self.task = None
-            elif type(output) == tuple and output[0] == 'ADDFILE':
-                self._addClassFile(output[1], output[2])
         else:
             self.appendLog(msg)
 
 
     def closeEvent(self, event):
-        if self.task:
-            self.task.terminate = True
-        for w in self.workers.values():
-        	w.stop_wait()
+        self.worker.stop()
         event.accept()
 
