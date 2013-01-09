@@ -18,22 +18,31 @@ class yLayout(QLayout):
         self._data = data
         self._create()
 
-    def __getitem__(self, key):
-        return eval("self."+key)
-
     def align(self, al=None):
         return self._align.get(al, 0)
 
     def _create(self):
         pass
 
-    def _add(self, lt, name, item, *args, **kwargs):
+    def _add(self, lt, item, *args, **kwargs):
         if isinstance(item, QLayout):
             lt.addLayout(item, *args, **kwargs)
         else:
             lt.addWidget(item, *args, **kwargs)
-        if name != None and len(name) > 0:
-            setattr(self, name, item)
+
+# =======================================
+# Stop setting name for widget, you could and should find these widgets by yourself
+# The target of the class is for set layout, not for retrieving
+    #def __getitem__(self, key):
+    #    return eval("self."+key)
+    #def _add(self, lt, name, item, *args, **kwargs):
+    #    if isinstance(item, QLayout):
+    #        lt.addLayout(item, *args, **kwargs)
+    #    else:
+    #        lt.addWidget(item, *args, **kwargs)
+    #    if name != None and len(name) > 0:
+    #        setattr(self, name, item)
+# =======================================
 
 
 class yGridLayout(QGridLayout, yLayout):
@@ -51,15 +60,15 @@ class yGridLayout(QGridLayout, yLayout):
                 cell = row[j]
                 if cell is None:
                     continue
-                (name, item) = cell[0:2]
-                (rowspan, colspan, align) = (
-                    cell[2] if len(cell)>2 else 1,
-                    cell[3] if len(cell)>3 else 1,
-                    cell[4] if len(cell)>4 else None,
-                )
-                self._add(self, name, item, i, j,
-                        rowspan, colspan,
-                        self.align(align))
+                rowspan, colspan, align = 1, 1, None
+                if type(cell) == tuple:
+                    item = cell[0]
+                    if len(cell) > 1: rowspan = cell[1]
+                    if len(cell) > 2: colspan = cell[2]
+                    if len(cell) > 3: align = cell[3]
+                else:
+                    item = cell
+                self._add(self, item, i, j, rowspan, colspan, self.align(align))
 
 
 class yBoxLayout(QVBoxLayout, yLayout):
@@ -80,9 +89,13 @@ class yBoxLayout(QVBoxLayout, yLayout):
                 if cell is None:
                     lt.addStretch()
                     continue
-                (n, m) = cell[0:2]
-                a = cell[2] if len(cell)>2 else None
-                self._add(lt, n, m, alignment=self.align(a))
+                align = None
+                if type(cell) == tuple:
+                    item = cell[0]
+                    if len(cell) > 1: align = cell[1]
+                else:
+                    item = cell
+                self._add(lt, item, alignment=self.align(align))
 
             self.addLayout(lt)
 

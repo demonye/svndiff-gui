@@ -7,6 +7,7 @@ from PySide.QtGui import *
 from yelib.qt.layout import *
 import cPickle as pk
 from tabs import *
+from yelib.newtask import TaskWorker
 
 __version__ = "1.1"
 
@@ -18,18 +19,41 @@ class MainWindow(QMainWindow):
         self.main = MainArea(self)
         self.setCentralWidget(self.main)
 
+        self.createToolBar()
+        self.createStatusBar()
+
+        self.setWindowTitle('Svn Tool')
+        self.setWindowIcon(QIcon('logo.png'))
+
+    def createStatusBar(self):
         self.lbLoadingText = QLabel()
         self.lbLoadingGif = QLabel()
         self.lbLoadingGif.hide()
         movie = QMovie("loading-small.gif")
         movie.start()
         self.lbLoadingGif.setMovie(movie)
+
         self.statusBar()
         self.statusBar().addWidget(self.lbLoadingText)
         self.statusBar().addWidget(self.lbLoadingGif)
         self.setStyleSheet("QStatusBar::item {border-style:flat;}")
-        self.setWindowTitle('Svn Tool')
-        self.setWindowIcon(QIcon('logo.png'))
+
+    def createToolBar(self):
+        self.myTb = self.addToolBar("Svn Tool")
+        self.myTb.addAction( QAction(
+            QIcon('stop-task.png'), "S&top Task", self,
+            statusTip="Stop current running task",
+            triggered=self.stopCurrentTask) )
+        self.myTb.addAction( QAction(
+            QIcon('settings.png'), "&Settings", self,
+            statusTip="Open Settings Dialog",
+            triggered=self.openSettingsDlg) )
+
+    def stopCurrentTask(self):
+        TaskWorker().stop_task()
+
+    def openSettingsDlg(self):
+        print "openSettingsDlg"
 
     def center(self):
         self.move(
@@ -70,10 +94,11 @@ class MainArea(QWidget):
         self.txtLog.setMinimumHeight(150)
         self.txtLog.setOpenExternalLinks(True)
         self.ltLog = yBoxLayout([
-            [ ('', self.txtLog) ],
+            [ self.txtLog ],
         ])
         self.grpLog.setLayout(self.ltLog)
         # ==== Log ====
+        self.tab.setCurrentIndex(1)
 
         # ==== Main Layout ====
         splitter = QSplitter(self)
@@ -83,7 +108,7 @@ class MainArea(QWidget):
         splitter.addWidget(self.grpLog)
         #self.btnExit = QPushButton(u'Exit')
         self.lt = yBoxLayout([
-            [ ('', splitter) ],
+            [ splitter ],
         ])
         #self.btnExit.clicked.connect(self.close)
         self.setLayout(self.lt)

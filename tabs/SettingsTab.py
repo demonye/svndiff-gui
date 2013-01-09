@@ -40,7 +40,7 @@ class SettingsTab(BaseTab):
                 'java app server': parent.tabClass.txtAppSrv,
                 'java app username': parent.tabClass.txtSrvUser,
                 'java app password': parent.tabClass.txtSrvPwd,
-                'search newer mins': parent.tabClass.txtNewerMins
+                'search newer mins': parent.tabClass.txtNewInMins
             },
 
         }
@@ -52,13 +52,13 @@ class SettingsTab(BaseTab):
         #self.btnSave = QPushButton('Save')
         #self.btnSave.clicked.connect(self.save_config)
         self.lt = yBoxLayout([
-            [ ('', grpDiff) ],
+            [ grpDiff ],
             #[ None, ('', self.btnSave) ],
             None,
         ])
         self.setLayout(self.lt)
         BaseTab.settings = self
-        parent.tabClass.updateJarInfo()
+        parent.tabClass.getJarInfo()
 
 
     # ==== Make Diff Settings ====
@@ -91,15 +91,15 @@ class SettingsTab(BaseTab):
 
         grp = QGroupBox(u'Upload Diff To Server')
         lt = yGridLayout([
-            [ ('', QLabel(u'Host/IP'),1,1,'r'), ('', self.txtDiffSrv),
-              ('', QLabel(u'Upload To'),1,1,'r'), ('', self.txtRmtDir,1,2) ],
-            [ ('', QLabel(u'Username'),1,1,'r'), ('', self.txtSrvUser),
-              ('', QLabel(u'Http URL'),1,1,'r'), ('', self.txtHttpUrl,1,2) ],
-            [ ('', self.rdoPwd), ('', self.txtSrvPwd),
-              ('', self.rdoKey), ('', self.txtKeyFile), ('', self.btnKeyFile) ],
-            [ ('', QLabel(' '),1,1) ],
-            [ ('', QLabel('Svn Account'),1,1,'r'), ('', self.txtSvnId) ],
-            [ ('', QLabel('Svn Password'),1,1,'r'), ('', self.txtSvnPwd) ],
+            [ (QLabel(u'Host/IP'),1,1,'r'), self.txtDiffSrv,
+              (QLabel(u'Upload To'),1,1,'r'), (self.txtRmtDir,1,2) ],
+            [ (QLabel(u'Username'),1,1,'r'), self.txtSrvUser,
+              (QLabel(u'Http URL'),1,1,'r'), (self.txtHttpUrl,1,2) ],
+            [ self.rdoPwd, self.txtSrvPwd,
+              self.rdoKey, self.txtKeyFile, self.btnKeyFile ],
+            [ (QLabel(' '),1,1) ],
+            [ (QLabel('Svn Account'),1,1,'r'), self.txtSvnId ],
+            [ (QLabel('Svn Password'),1,1,'r'), self.txtSvnPwd ],
         ])
         #self.txtSrvUser.setMaximumWidth(100)
         grp.setLayout(lt)
@@ -119,7 +119,7 @@ class SettingsTab(BaseTab):
                     for _ in value.split(','):
                         app = _.strip()
                         data = {}
-                        for k in ('suffix','prefix','linux path','win path'):
+                        for k in ('suffix','prefix','path', 'local'):
                             data[k] = self.conf(app, k)
                         ctrl.addItem(app, data)
                 elif hasattr(ctrl, '__call__'):

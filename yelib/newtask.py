@@ -9,7 +9,7 @@ from subprocess import *
 from yelib.util import enum
 from PySide.QtCore import QObject, Signal
 import locale
-from yelib.util import coroutine
+from yelib.util import singleton
 
 OutputType = enum(
     'NOTIFY', 'OUTPUT', 'ERROR', 'WARN', 'INFO',
@@ -46,6 +46,9 @@ class TaskOutput(object):
                     self.logtime, color, self.typestr, self.output) )
 
 
+TASK_START, TASK_STOP, TASK_PAUSE = 0, 1, 2
+
+@singleton
 class TaskWorker(object):
 
     def __init__(self, autostart=True, debug_level=OutputType.INFO):
@@ -64,44 +67,39 @@ class TaskWorker(object):
     def start(self):
         self._workthd.start()
     def stop(self):
-        self._todo.put(('quit', None))
+        self.add_task('quit', None, False)
         self.stop_task()
         self._workthd.join()
 
-    def add_task(self, task, hdlr=None, start=True):
-        self._todo.put((task, hdlr))
+    def add_task(self, task, hdlr=None, start=TASK_START):
+        self._todo.put((task, hdlr, start))
         if start:
             self.start_task()
+
     def start_task(self):
-        self._task_run = True
-        self.resume_task()
+        self._task_run = TASK_START
     def stop_task(self):
-        self._task_run = False
-        self.resume_task()
+        self._task_run = TASK_STOP
     def pause_task(self):
-        self._lock.acquire()
-    def resume_task(self):
-        try:
-            self._lock.release()
-        except ThreadError:
-            pass
+        self._task_run = TASK_PAUSE
 
     def run(self):
         while True:
             try:
-                task, hdlr = self._todo.get(timeout=0.1)
+                task, hdlr, self._task_run = self._todo.get(timeout=0.1)
                 if type(task) == str and task == 'quit':
                     break
                 output = task.next()
                 if hdlr and output.type <= self._dbg_lvl:
-                    hdlr.send(output) # For Qt app, emit signal
+                    hdlr.send(output)   # For Qt App, emit Signal
                 try:
                     while True:
-                        self.resume_task()
-                        output = task.send(self._task_run)
+                        if self._task_run == TASK_PAUSE:
+                        	time.sleep(0.1)
+                        	continue
+                        output = task.send(self._task_run == TASK_START)
                         if hdlr and output.type <= self._dbg_lvl:
-                            hdlr.send(output) # For Qt App, emit Signal
-                        self.pause_task()
+                            hdlr.send(output)   # For Qt App, emit Signal
                 except StopIteration:
                     pass
                 # Cause RuntimeError: 'generator ignored GeneratorExit'
@@ -126,6 +124,7 @@ class CommandTerminated(Exception):
     pass
 
 def CmdTask(*args):
+    (yield TaskOutput(u'ENTER', OutputType.NOTIFY))
     popen_args = {
         'args': args,
         'stdout': PIPE,
@@ -143,13 +142,12 @@ def CmdTask(*args):
         if len(errmsg) > 0:
         	raise Exception(errmsg)
         running = True
-        while running:
+        while True:
             line = p.stdout.readline()
             if line == "":
                 break
-            running = (yield TaskOutput(line.rstrip(), OutputType.OUTPUT))
-        if not running:
-            raise CommandTerminated()
+            if not (yield TaskOutput(line.rstrip(), OutputType.OUTPUT)):
+                raise CommandTerminated()
         (yield TaskOutput(u'END: %s' % args[0]))
     except CommandTerminated:
         (yield TaskOutput(u'TERMINITED: %s' % args[0], OutputType.WARN))

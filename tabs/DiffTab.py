@@ -55,12 +55,12 @@ class DiffTab(BaseTab):
         self.lbSlikSvn.setOpenExternalLinks(True)
         
         self.lt = yBoxLayout([
-            [ ('', QLabel(u'Source Path')), ('', self.txtSrcDir), ('', self.btnSrcDir) ],
-            [ ('', self.lstFiles) ],
-            [ ('', self.lbSlikSvn) ],
-            [ ('', self.btnFind), ('', self.btnDiff), None,
-              ('', QLabel(u'Bug Id')), ('', self.txtBugId),
-              ('', self.btnUpload),
+            [ QLabel(u'Source Path'), self.txtSrcDir, self.btnSrcDir ],
+            [ self.lstFiles ],
+            [ self.lbSlikSvn ],
+            [ self.btnFind, self.btnDiff, None,
+              QLabel(u'Bug Id'), self.txtBugId,
+              self.btnUpload,
             ],
         ])
         self.setLayout(self.lt)
@@ -95,8 +95,6 @@ class DiffTab(BaseTab):
         if srcdir == "":
             self.appendLog(TaskOutput(u'Please set the path of source code in Setting Tab!', OutputType.WARN))
             return
-        self.btnFind.setDisabled(True)
-        self.showLoading(u'Getting svn status of ' + srcdir, True)
         self.worker.add_task(
                 CmdTask("svndiff", "-c", "-s", srcdir),
                 TaskHandler(self.showChangedFiles)
@@ -107,9 +105,13 @@ class DiffTab(BaseTab):
 
     @Slot(TaskOutput)
     def showChangedFiles(self, msg):
-        if msg.type == OutputType.NOTIFY and msg.output.startswith('EXIT '):
-            self.showLoading('', False)
-            self.btnFind.setDisabled(False)
+        if msg.type == OutputType.NOTIFY:
+            if msg.output == u'ENTER':
+                self.btnFind.setDisabled(True)
+                self.showLoading(u'Getting svn status ... ', True)
+            elif msg.output.startswith('EXIT '):
+                self.showLoading('', False)
+                self.btnFind.setDisabled(False)
             return
         if msg.type == OutputType.OUTPUT and msg.output:
             #print "****", msg.output
@@ -133,8 +135,6 @@ class DiffTab(BaseTab):
 
     def makeDiff(self):
         srcdir = self.txtSrcDir.text()
-        self.btnDiff.setDisabled(True)
-        self.showLoading(u'Making diff files of ' + srcdir, True)
         files = []
         tb = self.lstFiles
         for i in xrange(tb.rowCount()):
@@ -148,13 +148,17 @@ class DiffTab(BaseTab):
 
     @Slot(TaskOutput)
     def readyToUpload(self, msg):
-        if msg.type == OutputType.NOTIFY and msg.output.startswith('EXIT '):
-            code = int(msg.output.split()[1])
-            if code == 0:
-                hdiff_dir = os.path.join(os.getcwdu(), "hdiff").replace(os.sep, '/')
-                self.appendLog(TaskOutput(u"Go to <a href='{}'>HDIFF Directory</a> to check the result.".format(hdiff_dir)))
-            self.showLoading('', False)
-            self.btnDiff.setDisabled(False)
+        if msg.type == OutputType.NOTIFY:
+            if msg.output == u'ENTER':
+                self.btnDiff.setDisabled(True)
+                self.showLoading(u'Making diff files ... ', True)
+            elif msg.output.startswith('EXIT '):
+                code = int(msg.output.split()[1])
+                if code == 0:
+                    hdiff_dir = os.path.join(os.getcwdu(), "hdiff").replace(os.sep, '/')
+                    self.appendLog(TaskOutput(u"Go to <a href='{}'>HDIFF Directory</a> to check the result.".format(hdiff_dir)))
+                self.showLoading('', False)
+                self.btnDiff.setDisabled(False)
             return
         self.appendLog(msg)
 
@@ -165,8 +169,6 @@ class DiffTab(BaseTab):
 
         st = self.settings
         rmtdir = st.txtRmtDir.text()
-        self.btnUpload.setDisabled(True)
-        self.showLoading(u'Uploading diff files to ' + rmtdir, True)
         bugid = self.txtBugId.text()
         svnid = st.txtSvnId.text()
         if svnid == "":
@@ -186,20 +188,21 @@ class DiffTab(BaseTab):
             sshargs['key_filename'] = st.txtKeyFile.text()
 
         self.worker.add_task(
-                self._upload(rmtdir, **sshargs),
+                self._uploadFiles(rmtdir, **sshargs),
                 TaskHandler(self.uploadHandler)
                 )
 
-    def _upload(self, dstdir, **sshargs):
+    def _uploadFiles(self, dstdir, **sshargs):
+        (yield TaskOutput(u'ENTER', OutputType.NOTIFY))
         sshcli = SSHClient()
         sftpcli = None
         code = 0
-        (yield TaskOutput(u'Conntecting to %s ...' % sshargs['hostname']))
         try:
+            if not (yield TaskOutput(u'Conntecting to %s ...' % sshargs['hostname'])):
+                raise CommandTerminated()
             sshcli.set_missing_host_key_policy(AutoAddPolicy())
             sshcli.connect(**sshargs)
-            running = (yield TaskOutput(u'Connected, ready to upload ...'))
-            if not running:
+            if not (yield TaskOutput(u'Connected, ready to upload ...')):
                 raise CommandTerminated()
             ret = sshcli.exec_command("[ -d {0} ] && rm -rf {0}; mkdir -p {0}".format(dstdir))
             errstr = ret[2].read()
@@ -211,8 +214,7 @@ class DiffTab(BaseTab):
                 if f.lower().endswith('.html'):
                     localfile = os.path.join(srcdir, f)
                     remotefile = os.path.join(dstdir, f).replace(os.sep, '/')
-                    running = (yield TaskOutput(u'Uploading %s ...' % f))
-                    if not running:
+                    if not (yield TaskOutput(u'Uploading %s ...' % f)):
                         raise CommandTerminated()
                     sftpcli.put(localfile, remotefile)
         except CommandTerminated:
@@ -231,14 +233,18 @@ class DiffTab(BaseTab):
 
     @Slot(TaskOutput)
     def uploadHandler(self, msg):
-        if msg.type == OutputType.NOTIFY and msg.output.startswith('EXIT '):
-            code = int(msg.output.split()[1])
-            if code == 0:
-                self.appendLog(TaskOutput(
-                    u"Click <a href='{0}'>{0}</a> to review the result.".format(
-                        self.result_url)))
-            self.showLoading('', False)
-            self.btnUpload.setDisabled(False)
+        if msg.type == OutputType.NOTIFY:
+            if msg.output == u'ENTER':
+                self.btnUpload.setDisabled(True)
+                self.showLoading(u'Uploading diff files ... ', True)
+            elif msg.output.startswith('EXIT '):
+                code = int(msg.output.split()[1])
+                if code == 0:
+                    self.appendLog(TaskOutput(
+                        u"Click <a href='{0}'>{0}</a> to review the result.".format(
+                            self.result_url)))
+                self.showLoading('', False)
+                self.btnUpload.setDisabled(False)
             return
         self.appendLog(msg)
 

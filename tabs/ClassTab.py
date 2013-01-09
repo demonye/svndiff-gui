@@ -17,12 +17,13 @@ class ClassTab(BaseTab):
     def __init__(self, parent=None):
         super(ClassTab, self).__init__(parent)
 
+        self.local_bakdir = "data/backup"
         self.grpSource = self.createSourceGroup()
         self.grpTarget = self.createTargetGroup()
 
         self.lt = yBoxLayout([
-            [ ('', self.grpSource) ],
-            [ ('', self.grpTarget) ],
+            [ self.grpSource ],
+            [ self.grpTarget ],
         ])
         self.setLayout(self.lt)
         self.setStyleSheet(
@@ -43,24 +44,18 @@ class ClassTab(BaseTab):
         self.btnClsFile.setFixedWidth(20)
         self.btnClsFile.clicked.connect(self.selectClsFile)
 
+        self.btnFindNew = QPushButton('Find Class\nChanged in')
+        self.btnFindNew.clicked.connect(self.findNewClass)
+        self.btnFindNew.setFixedWidth(100)
+        self.txtNewInMins = QLineEdit()
+        self.txtNewInMins.setFixedWidth(40)
+
         self.btnAddFile = QPushButton('Add')
+        self.btnAddFile.setFixedWidth(100)
         self.btnAddFile.clicked.connect(self.addClassFile)
         self.btnRemoveFiles = QPushButton('Remove')
+        self.btnRemoveFiles.setFixedWidth(100)
         self.btnRemoveFiles.clicked.connect(self.removeClassFiles)
-
-        self.btnSearch = QPushButton('Search New')
-        self.btnSearch.clicked.connect(self.searchNewer)
-        self.btnStopSrch = QPushButton('Stop Search')
-        self.btnStopSrch.clicked.connect(self.stopSearch)
-        self.btnStopSrch.hide()
-        self.btnSearch.setFixedWidth(80)
-        self.btnStopSrch.setFixedWidth(80)
-        ltSearch = yBoxLayout([
-            [ ('', self.btnSearch), ('', self.btnStopSrch) ]
-        ])
-
-        self.txtNewerMins = QLineEdit()
-        self.txtNewerMins.setFixedWidth(40)
 
         tb = QTableWidget()
         tb.setColumnCount(4)
@@ -76,19 +71,20 @@ class ClassTab(BaseTab):
         #tb.horizontalHeader().hide()
         tb.verticalHeader().hide()
         tb.setAlternatingRowColors(True)
+        tb.setMinimumHeight(100)
         self.tbSource = tb
         wtMin = QWidget()
         ltMin = yBoxLayout([
-            [ ('', QLabel('in')), ('', self.txtNewerMins, 'r'), ('', QLabel(u'mins')) ],
+            [ QLabel('in'), self.txtNewInMins, QLabel(u'mins') ],
         ])
         wtMin.setLayout(ltMin)
         wtMin.setFixedWidth(100)
         lt = yGridLayout([
-            [ ('', QLabel('Select Source Dir')), ('', self.txtSrcDir), ('', self.btnSrcDir),
-              ('', ltSearch), ('', wtMin) ],
-            [ ('', QLabel('Select Class File')), ('', self.txtClsFile),
-              ('', self.btnClsFile), ('', self.btnAddFile), ('', self.btnRemoveFiles) ],
-            [ ('', self.tbSource, 1, 5) ] + [None]*4,
+            [ QLabel('Select Source Dir'), self.txtSrcDir, self.btnSrcDir,
+              self.btnFindNew, wtMin ],
+            [ QLabel('Select Class File'), self.txtClsFile,
+              self.btnClsFile, self.btnAddFile, self.btnRemoveFiles ],
+            [ (self.tbSource, 1, 5) ] + [None]*4,
         ])
         grp.setLayout(lt)
 
@@ -98,63 +94,192 @@ class ClassTab(BaseTab):
     def createTargetGroup(self):
         grp = QGroupBox('Target')
         self.cboAppType = QComboBox()
-        self.cboAppType.activated.connect(self.updateJarInfo)
+        self.cboAppType.activated.connect(self.getJarInfo)
         self.txtAppSrv = QLineEdit()
         self.txtSrvUser = QLineEdit()
         self.txtSrvPwd = QLineEdit()
         self.txtSrvPwd.setEchoMode(QLineEdit.Password)
 
-        tb = QTableWidget()
-        tb.setColumnCount(4)
-        #tb.setSelectionBehavior(QAbstractItemView.SelectRows)
-        tb.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        tb.setHorizontalHeaderLabels(("", "Prefix", "File", "Path"))
-        tb.horizontalHeader().setResizeMode(0, QHeaderView.Fixed)
-        tb.horizontalHeader().setResizeMode(2, QHeaderView.ResizeToContents)
-        #tb.horizontalHeader().setResizeMode(3, QHeaderView.ResizeToContents)
-        tb.horizontalHeader().setResizeMode(3, QHeaderView.Interactive)
-        tb.setColumnHidden(1, True)
-        #tb.horizontalHeader().hide()
-        tb.verticalHeader().hide()
-        #tb.setFixedHeight(40)
-        tb.setColumnWidth(0, 30)
-        #tb.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        #tb.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
-        self.tbJarInfo = tb
+        #tb = QTableWidget()
+        #tb.setColumnCount(4)
+        ##tb.setSelectionBehavior(QAbstractItemView.SelectRows)
+        #tb.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        #tb.setHorizontalHeaderLabels(("", "Prefix", "File", "Path"))
+        #tb.horizontalHeader().setResizeMode(0, QHeaderView.Fixed)
+        #tb.horizontalHeader().setResizeMode(2, QHeaderView.ResizeToContents)
+        ##tb.horizontalHeader().setResizeMode(3, QHeaderView.ResizeToContents)
+        #tb.horizontalHeader().setResizeMode(3, QHeaderView.Interactive)
+        #tb.setColumnHidden(1, True)
+        ##tb.horizontalHeader().hide()
+        #tb.verticalHeader().hide()
+        ##tb.setFixedHeight(70)
+        #tb.setColumnWidth(0, 30)
+        ##tb.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        ##tb.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+        #self.tbJarInfo = tbtbJarInfo
 
-        self.btnGetJar = QPushButton('Get Jarfile')
+        self.lbFilePrefix = QLabel()
+        self.lbRemotePath = QLabel()
+        self.lbFetchedFile = QLabel()
+        ltJarInfo = yGridLayout([
+            [ QLabel('File Prefix'), self.lbFilePrefix ],
+            [ QLabel('Remote Path'), self.lbRemotePath ],
+            [ QLabel('Fetched File'), self.lbFetchedFile ],
+        ])
+        ltJarInfo.setColumnStretch(1, 10)
+        wtJarInfo = QWidget()
+        wtJarInfo.setLayout(ltJarInfo)
+        wtJarInfo.setStyleSheet('QLabel {padding:3px;background:lightyellow;border-radius:2px}')
+
+
+        self.btnFetchJar = QPushButton('Fetch Jarfile')
+        self.btnFetchJar.clicked.connect(self.fetchJarFile)
+        self.btnMatchInJar = QPushButton('Match Class in Jar')
+        self.btnMatchInJar.clicked.connect(self.matchInJar)
+        self.btnUpdateJar = QPushButton('Update Jarfile')
+        self.btnUpdateJar.clicked.connect(self.updateJar)
         self.btnRestore = QPushButton('Restore Jarfile')
-        ltGrid = yGridLayout([
-            [ ('', QLabel(u'App Type')), ('', self.cboAppType),
-              ('', QLabel(u'Hostname')), ('', self.txtAppSrv) ],
-            [ ('', QLabel(u'Username')), ('', self.txtSrvUser),
-              ('', QLabel(u'Password')), ('', self.txtSrvPwd) ],
-            [ ('', self.tbJarInfo,2,4) ],
+        self.btnRestore.setDisabled(True)
+        ltSrvInfo = yGridLayout([
+            [ QLabel(u'App Type'), self.cboAppType,
+              QLabel(u'Hostname'), self.txtAppSrv ],
+            [ QLabel(u'Username'), self.txtSrvUser,
+              QLabel(u'Password'), self.txtSrvPwd ],
+        ])
+        ltGrid = yBoxLayout([
+            [ ltSrvInfo ],
+            #[ self.tbJarInfo ],
+            [ wtJarInfo ],
         ])
         ltBtn = yBoxLayout([
-            [ ('', self.btnGetJar) ],
-            [ ('', self.btnRestore) ],
+            None,
+            [ self.btnFetchJar ],
+            [ self.btnMatchInJar ],
+            [ self.btnUpdateJar ],
+            [ self.btnRestore ],
             None,
         ])
         lt = yBoxLayout([
-            [ ('', ltGrid), ('', ltBtn) ]
+            [ ltGrid, ltBtn ]
         ])
         grp.setLayout(lt)
 
         return grp
 
 
-    def updateJarInfo(self):
+    def fetchJarFile(self):
+        sshargs = {
+            'hostname': self.txtAppSrv.text(),
+            'username': self.txtSrvUser.text(),
+            'password': self.txtSrvPwd.text(),
+            'timeout' : 10,
+            'compress': True,
+            }
+
         appdata = self.cboAppType.itemData(self.cboAppType.currentIndex())
-        self.tbJarInfo.removeRow(0)
-        self.tbJarInfo.insertRow(0)
-        statItem = QTableWidgetItem(QIcon('FAQ.png'), '')
-        #statItem.setTextAlignment(Qt.AlignCenter)
-        self.tbJarInfo.setItem(0, 0, statItem)
-        self.tbJarInfo.setItem(0, 1, QTableWidgetItem(appdata['prefix']))
-        self.tbJarInfo.setItem(0, 2, QTableWidgetItem(appdata['prefix'] + "*." + appdata['suffix']))
-        self.tbJarInfo.setItem(0, 3, QTableWidgetItem(appdata['linux path']))
-        self.tbJarInfo.resizeColumnToContents(3)
+        if appdata['local'] == 'yes':
+            self.appendLog(TaskOutput(u"TODO: Local Server"))
+            return
+
+        self.worker.add_task(
+                self._fetchJarFile(
+                    appdata['prefix'], appdata['suffix'], appdata['path'],
+                    **sshargs ),
+                TaskHandler(self.fetchJarFileHandler)
+                )
+
+    def _fetchJarFile(self, prefix, suffix, dstdir, **sshargs):
+        (yield TaskOutput(u'ENTER', OutputType.NOTIFY))
+        sshcli = SSHClient()
+        sftpcli = None
+        code = 0
+        try:
+            if os.path.exists(self.local_bakdir):
+                if not os.path.isdir(self.local_bakdir):
+                	raise Exception("File %s exists" % self.lcoal_bakdir)
+            else:
+                os.makedirs(self.lcoal_bakdir)
+
+            if not (yield TaskOutput(u'Conntecting to %s ...' % sshargs['hostname'])):
+                raise CommandTerminated()
+            sshcli.set_missing_host_key_policy(AutoAddPolicy())
+            sshcli.connect(**sshargs)
+            if not (yield TaskOutput(u'Connected, fetchting file ...')):
+                raise CommandTerminated()
+            ret = sshcli.exec_command("cd {}; ls -1 {}*.{}".format(dstdir, prefix, suffix))
+            errstr = ret[2].read()
+            if errstr != '':
+                raise Exception(errstr)
+            sftpcli = sshcli.open_sftp()
+            filenum = 0
+            for l in ret[1].readlines():
+                f = l.rstrip()
+                remotefile = os.path.join(dstdir, f).replace(os.sep, '/')
+                if not (yield TaskOutput(u'Fetchting %s ...' % f)):
+                    raise CommandTerminated()
+                sftpcli.get(remotefile, os.path.join(self.local_bakdir, f))
+                filenum += 1
+            if filenum > 1:
+            	raise Exception(u'Found %d files, please check your settings' % filenum)
+        except CommandTerminated:
+            code = -2
+            (yield TaskOutput(u'Fetching Terminited', OutputType.WARN))
+            try: p.terminate()
+            except: pass
+            p.wait()
+        except Exception as ex:
+            code = -1
+            (yield TaskOutput(ex.message, OutputType.ERROR))
+        finally:
+            if sftpcli: sftpcli.close()
+            sshcli.close()
+            (yield TaskOutput(u'EXIT %d' % code, OutputType.NOTIFY))
+
+
+    @Slot(TaskOutput)
+    def fetchJarFileHandler(self, msg):
+        if msg.type == OutputType.NOTIFY:
+            if msg.output == u'ENTER':
+                self.btnFetchJar.setDisabled(True)
+                self.showLoading(u'Fetching file ... ', True)
+            elif msg.output.startswith('EXIT '):
+                code = int(msg.output.split()[1])
+                if code == 0:
+                    data_dir = os.path.join(os.getcwdu(),
+                            self.local_bakdir).replace(os.sep, '/')
+                    self.appendLog(TaskOutput(
+                        u"Go to <a href='{}'>Data Directory</a> "
+                        "to check fie.".format(data_dir))
+                        )
+                self.showLoading('', False)
+                self.btnFetchJar.setDisabled(False)
+            return
+        self.appendLog(msg)
+
+
+    def matchInJar(self):
+        pass
+
+    def updateJar(self):
+        pass
+
+    def getJarInfo(self):
+        appdata = self.cboAppType.itemData(self.cboAppType.currentIndex())
+        pfx = appdata['prefix']
+        sfx = appdata['suffix']
+        pth = appdata['path']
+        self.lbFilePrefix.setText("{}*.{}".format(pfx, sfx))
+        self.lbRemotePath.setText(pth)
+        files = []
+        if not os.path.isdir(self.local_bakdir):
+            return
+        for fn in os.listdir(self.local_bakdir):
+            if fn.startswith(pfx) and fn.endswith(sfx):
+                files.append(fn)
+        if len(files) == 1:
+            self.lbFetchedFile.setText(files[0])
+        else:
+            self.lbFetchedFile.setText('')
 
 
     def selectSrcDir(self):
@@ -201,8 +326,8 @@ class ClassTab(BaseTab):
     def stopTask(self):
         return False
 
-    def searchNewer(self):
-        mins = self.txtNewerMins.text()
+    def findNewClass(self):
+        mins = self.txtNewInMins.text()
         for i in xrange(self.tbSource.rowCount()):
             self.tbSource.removeRow(0)
 
@@ -212,14 +337,11 @@ class ClassTab(BaseTab):
 
         srcdir = self.txtSrcDir.text()
         self.worker.add_task(
-                self._searchNewer(srcdir),
-                TaskHandler(self.searchHandler)
+                self._findNewClass(srcdir),
+                TaskHandler(self.findNewClassHandler)
                 )
 
-    def stopSearch(self):
-        self.worker.stop_task()
-
-    def _searchNewer(self, srcdir):
+    def _findNewClass(self, srcdir):
         curtime = time.time()
         found = 0
         code = 0
@@ -235,7 +357,7 @@ class ClassTab(BaseTab):
                     if ext.lower() != ".class":
                         continue
                     mt = os.path.getmtime(fname)
-                    secs = int(self.txtNewerMins.text()) * 60
+                    secs = int(self.txtNewInMins.text()) * 60
                     if curtime - mt <= secs:
                         (yield TaskOutput(('ADDFILE', fname, mt), OutputType.NOTIFY))
                         found += 1
@@ -252,7 +374,7 @@ class ClassTab(BaseTab):
             (yield TaskOutput(u'EXIT %d' % code, OutputType.NOTIFY))
 
     @Slot(TaskOutput)
-    def searchHandler(self, msg):
+    def findNewClassHandler(self, msg):
         if msg.type == OutputType.NOTIFY:
             output = msg.output
             if type(output) == tuple and output[0] == 'ADDFILE':
