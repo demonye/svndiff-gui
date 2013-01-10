@@ -3,6 +3,7 @@
 
 import os
 import time
+import zipfile
 from PySide.QtCore import *
 from PySide.QtGui import *
 from yelib.qt.layout import *
@@ -32,6 +33,9 @@ class ClassTab(BaseTab):
         self.setLayout(self.lt)
         self.worker = TaskWorker()
 
+    def init(self):
+        self.getJarInfo()
+
     # ==== Source Group ====
     def createSourceGroup(self):
         grp = QGroupBox(u'Source')
@@ -50,22 +54,21 @@ class ClassTab(BaseTab):
         self.txtNewInMins.setFixedWidth(40)
 
         self.btnAddFile = QPushButton('Add')
-        #self.btnAddFile.setFixedWidth(50)
         self.btnAddFile.clicked.connect(self.addClassFile)
         self.btnRemoveFiles = QPushButton('Remove')
-        #self.btnRemoveFiles.setFixedWidth(50)
         self.btnRemoveFiles.clicked.connect(self.removeClassFiles)
 
         tb = QTableWidget()
         tb.setColumnCount(4)
         tb.setSelectionBehavior(QAbstractItemView.SelectRows)
         tb.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        tb.setHorizontalHeaderLabels(("", "Class File", "Time", "File In Jar"))
+        tb.setHorizontalHeaderLabels(("", "", "Class File", "Modified Time"))
         tb.horizontalHeader().setResizeMode(0, QHeaderView.Fixed)
-        tb.horizontalHeader().setResizeMode(1, QHeaderView.Interactive)
-        tb.horizontalHeader().setResizeMode(2, QHeaderView.ResizeToContents)
-        tb.horizontalHeader().setResizeMode(3, QHeaderView.Interactive)
-        tb.horizontalHeader().resizeSection(0, 30) 
+        tb.horizontalHeader().setResizeMode(1, QHeaderView.Fixed)
+        tb.horizontalHeader().setResizeMode(2, QHeaderView.Interactive)
+        tb.horizontalHeader().setResizeMode(3, QHeaderView.ResizeToContents)
+        tb.horizontalHeader().resizeSection(0, 25) 
+        tb.horizontalHeader().resizeSection(1, 25) 
         #tb.setColumnHidden(4, True)
         #tb.horizontalHeader().hide()
         #tb.verticalHeader().hide()
@@ -236,16 +239,23 @@ class ClassTab(BaseTab):
     def _updateJar(self, jarfile):
         (yield TaskOutput(u'ENTER', OutputType.NOTIFY))
         code = 0
+        sshcli = SSHClient()
+        sftpcli = None
         try:
-            java_home = (self.parent.tabSettings.conf('java app', 'java home') or
-                         os.getenv['JAVA_HOME'] )
-            if not java_home:
-        	    raise Exception(u'Cannot find java_home!')
+            clsfiles = {}
+            for i in xrange(self.tbSource.rowCount()):
+                clsfile = self.tbSource.item(i, 2).text()
+                clsfiles[clsfile] = i
 
-            sshcli = SSHClient()
-            sftpcli = None
+            jarfname = os.path.join(self.local_bakdir, jarfile)
+            zf = zipfile.ZipFile(jarfname, 'r')
+            for zi in zf.infolist():
+                fn = zi.filename
+                n = clsfiles.get(fn, None)
+                if n is not None:
+                    (yield TaskOutput(('FOUND', n), OutputType.OUTPUT))
 
-            print "_updateJar", jarfile
+            #print "_updateJar", jarfile
             (yield TaskOutput(u'_updateJar'))
         except CommandTerminated:
             code = -2
@@ -262,8 +272,12 @@ class ClassTab(BaseTab):
     def updateJarHandler(self, msg):
         if not hasattr(self, 'fwUpdateJar'):
             self.fwUpdateJar = u"Updating successfully!"
-        self.taskHandler(msg, u'Fetching file ... ',
+        ret = self.taskHandler(msg, u'Fetching file ... ',
                 self.btnUpdateJar, self.fwUpdateJar)
+        if ret is not None:
+            if ret[0] == 'FOUND':
+                ico_success = QTableWidgetItem(QIcon('success.png'),'')
+                self.tbSource.setItem(ret[1], 1, ico_success)
 
     def getJarInfo(self):
         appdata = self.cboAppType.itemData(self.cboAppType.currentIndex())
@@ -290,18 +304,19 @@ class ClassTab(BaseTab):
         self._addClassFile(fname, mt)
 
     def _addClassFile(self, fname, mt):
+        print fname
         mtime = time.strftime(mtime_fmt, time.localtime(mt))
         n = self.tbSource.rowCount()
         self.tbSource.insertRow(n)
         chk = QTableWidgetItem()
         chk.setCheckState(Qt.Checked)
-
-        fn_in_jar = fname.replace(self.txtSrcDir.text()+os.sep, '').replace(os.sep, '.')
-
+        ico = QTableWidgetItem(QIcon("FAQ.png"), '')
+        class_fn = fname.replace(self.txtSrcDir.text()+os.sep, '').replace(os.sep, '/')
         self.tbSource.setItem(n, 0, chk)
-        self.tbSource.setItem(n, 1, QTableWidgetItem(fn_in_jar))
-        self.tbSource.setItem(n, 2, QTableWidgetItem(mtime))
-        self.tbSource.resizeColumnToContents(1)
+        self.tbSource.setItem(n, 1, ico)
+        self.tbSource.setItem(n, 2, QTableWidgetItem(class_fn))
+        self.tbSource.setItem(n, 3, QTableWidgetItem(mtime))
+        self.tbSource.resizeColumnToContents(2)
 
     def removeClassFiles(self):
         n = self.tbSource.rowCount()
@@ -319,8 +334,6 @@ class ClassTab(BaseTab):
         for i in xrange(self.tbSource.rowCount()):
             self.tbSource.removeRow(0)
 
-        self.showLoading(u'Searching class files newer than {} mins'.format(mins), True)
-
         srcdir = self.txtSrcDir.text()
         self.worker.add_task(
                 self._findNewClass(srcdir),
@@ -328,6 +341,7 @@ class ClassTab(BaseTab):
                 )
 
     def _findNewClass(self, srcdir):
+        (yield TaskOutput(u'ENTER', OutputType.NOTIFY))
         curtime = time.time()
         found = 0
         code = 0
@@ -345,7 +359,7 @@ class ClassTab(BaseTab):
                     mt = os.path.getmtime(fname)
                     secs = int(self.txtNewInMins.text()) * 60
                     if curtime - mt <= secs:
-                        (yield TaskOutput(('ADDFILE', fname, mt), OutputType.NOTIFY))
+                        (yield TaskOutput(('ADDFILE', fname, mt), OutputType.OUTPUT))
                         found += 1
             (yield TaskOutput(u'Found %s files.' % found))
         except CommandTerminated:
@@ -359,15 +373,11 @@ class ClassTab(BaseTab):
 
     @Slot(TaskOutput)
     def findNewClassHandler(self, msg):
-        if msg.type == OutputType.NOTIFY:
-            output = msg.output
-            if type(output) == tuple and output[0] == 'ADDFILE':
-                self._addClassFile(output[1], output[2])
-            elif output.startswith('EXIT '):
-                self.showLoading('', False)
-        else:
-            self.appendLog(msg)
-
+        ret = self.taskHandler(msg,
+                u'Searching New Class Files ... ', self.btnFindNew)
+        if ret is not None:
+            if type(ret) == tuple and ret[0] == 'ADDFILE':
+                self._addClassFile(ret[1], ret[2])
 
     def closeEvent(self, event):
         self.worker.stop()

@@ -1,5 +1,6 @@
 # -* coding: utf-8 -*-
 
+import os
 from PySide.QtCore import *
 from PySide.QtGui import *
 from yelib.qt.layout import *
@@ -9,7 +10,6 @@ import locale
 
 class BaseTab(QWidget):
 
-    settings = None
 
     def __init__(self, parent=None):
         super(BaseTab, self).__init__(parent)
@@ -17,6 +17,10 @@ class BaseTab(QWidget):
         #self.setting = parent.tabSettings
         self.setFont(QFont("Monospace", 10))
         self.coding = locale.getdefaultlocale()[1]
+        settings = None
+
+    def init(self):
+        pass
 
     def showLoading(self, msg, loading=True):
         self.parent.parent().showLoading(msg, loading)
@@ -78,12 +82,12 @@ class SelectFile(yBoxLayout):
         if self.type == "file":
             fname = QFileDialog.getOpenFileName(None,
                     self.title, self.text(), self.filter)
+            if len(fname) > 0:
+                self.txt.setText(fname[0].replace('/', os.sep))
         elif self.type == "dir":
             fname = QFileDialog.getExistingDirectory(None,
                     self.title, self.text())
-        else:
-            return
-        if len(fname) > 0:
-            self.txt.setText(fname[0])
+            if len(fname) > 0:
+                self.txt.setText(fname)
 
 

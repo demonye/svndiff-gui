@@ -7,7 +7,7 @@ from yelib.qt.layout import *
 from tabs.BaseTab import *
 from ConfigParser import *
 
-class SettingsTab(BaseTab):
+class SettingsTab(QDialog):
 
     def __init__(self, parent=None):
         super(SettingsTab, self).__init__(parent)
@@ -15,6 +15,8 @@ class SettingsTab(BaseTab):
         grpDiff = self.createDiffGroup()
 
         # ==== Config ====
+        tabDiff = parent.main.tabDiff
+        tabClass = parent.main.tabClass
         self.config_map = {
             'svn': {
                 'username': self.txtSvnId,
@@ -30,35 +32,38 @@ class SettingsTab(BaseTab):
                 'http url': self.txtHttpUrl,
             },
             'java app': {
-                'app types': parent.tabClass.cboAppType
+                'app types': tabClass.cboAppType
             },
             'recent records': {
-                'diff bug id': parent.tabDiff.txtBugId,
-                'diff source path': parent.tabDiff.txtSrcDir,
-                'java source path': parent.tabClass.txtSrcDir,
-                'java app': parent.tabClass.cboAppType.setCurrentIndex,
-                'java app server': parent.tabClass.txtAppSrv,
-                'java app username': parent.tabClass.txtSrvUser,
-                'java app password': parent.tabClass.txtSrvPwd,
-                'search newer mins': parent.tabClass.txtNewInMins
+                'diff bug id': tabDiff.txtBugId,
+                'diff source path': tabDiff.txtSrcDir,
+                'java source path': tabClass.txtSrcDir,
+                'java app': tabClass.cboAppType.setCurrentIndex,
+                'java app server': tabClass.txtAppSrv,
+                'java app username': tabClass.txtSrvUser,
+                'java app password': tabClass.txtSrvPwd,
+                'search newer mins': tabClass.txtNewInMins
             },
 
         }
         self.config = SafeConfigParser()
         self.config_fname = "settings.cfg"
-        self.load_config()
+        self.loadConfig()
         # ==== Config ====
 
-        #self.btnSave = QPushButton('Save')
-        #self.btnSave.clicked.connect(self.save_config)
+        self.btnSave = QPushButton('Save')
+        self.btnSave.clicked.connect(self.saveConfig)
+        self.btnCancel = QPushButton('Cancel')
+        self.btnCancel.clicked.connect(self.close)
         self.lt = yBoxLayout([
             [ grpDiff ],
-            #[ None, ('', self.btnSave) ],
+            [ None, self.btnSave, self.btnCancel ],
             None,
         ])
         self.setLayout(self.lt)
-        BaseTab.settings = self
-        parent.tabClass.getJarInfo()
+        self.setWindowTitle('Settings')
+        #BaseTab.settings = self
+        #tabClass.getJarInfo()
 
 
     # ==== Make Diff Settings ====
@@ -74,14 +79,14 @@ class SettingsTab(BaseTab):
         self.txtSrvPwd.setEchoMode(QLineEdit.Password)
         self.txtSrvPwd.setFixedWidth(150)
         self.rdoPwd = QRadioButton(u'Password', self)
-        self.rdoPwd.clicked.connect(self.auth_by_pwd)
+        self.rdoPwd.clicked.connect(self.authByPwd)
 
         self.txtKeyFile = QLineEdit()
         self.btnKeyFile = QPushButton(' / ')
         self.rdoKey = QRadioButton(u'Key File', self)
         self.btnKeyFile.setFixedWidth(20)
-        self.btnKeyFile.clicked.connect(self.select_keyfile)
-        self.rdoKey.clicked.connect(self.auth_by_key)
+        self.btnKeyFile.clicked.connect(self.selectKeyFile)
+        self.rdoKey.clicked.connect(self.authByKey)
 
         self.txtSvnId = QLineEdit()
         self.txtSvnId.setFixedWidth(150)
@@ -106,7 +111,7 @@ class SettingsTab(BaseTab):
 
         return grp
 
-    def load_config(self):
+    def loadConfig(self):
         self.config.read(self.config_fname)
         for sect, sect_v in self.config_map.items():
             for key, ctrl in sect_v.items():
@@ -129,7 +134,7 @@ class SettingsTab(BaseTab):
                             ctrl(i)
                             break
 
-    def save_config(self):
+    def saveConfig(self):
         for sect, sect_v in self.config_map.items():
             for key, ctrl in sect_v.items():
                 if isinstance(ctrl, (QLineEdit, SelectFile)):
@@ -147,22 +152,24 @@ class SettingsTab(BaseTab):
         self.config.write(f)
         f.close()
 
+        self.close()
+
 
     def closeEvent(self, event):
-        self.save_config()
+        self.loadConfig()
         event.accept()
 
-    def auth_by_pwd(self):
+    def authByPwd(self):
         self.txtSrvPwd.setDisabled(False)
         self.txtKeyFile.setDisabled(True)
         self.btnKeyFile.setDisabled(True)
 
-    def auth_by_key(self):
+    def authByKey(self):
         self.txtSrvPwd.setDisabled(True)
         self.txtKeyFile.setDisabled(False)
         self.btnKeyFile.setDisabled(False)
 
-    def select_keyfile(self):
+    def selectKeyFile(self):
         keyfile = self.txtKeyFile
         filename = QFileDialog.getOpenFileName(self, u'Select Key File', keyfile.text())
         if len(filename) > 0:

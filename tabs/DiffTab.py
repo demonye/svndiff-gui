@@ -17,6 +17,8 @@ class DiffTab(BaseTab):
     def __init__(self, parent=None):
         super(DiffTab, self).__init__(parent)
 
+        self.hdiff_dir = "data/hdiff"
+
         # ==== File List ====
         tb = QTableWidget()
         tb.setColumnCount(5)
@@ -108,7 +110,7 @@ class DiffTab(BaseTab):
         ret = self.taskHandler(msg, u'Getting svn status ... ', self.btnFind)
         if ret is not None:
             tb = self.lstFiles
-            m = msg.output.split()
+            m = ret.split()
             if m[0] not in self.statusIcons:
                 self.appendLog(
                     TaskOutput(u'Not recognized flag: %s' % m[0],
@@ -134,7 +136,7 @@ class DiffTab(BaseTab):
             item = tb.item(i, 0)
             if item.checkState() == Qt.Checked:
                 files.append(tb.item(i, 4).text())
-        cmds = ["svndiff", "-s", srcdir] + files
+        cmds = [ "svndiff", "-s", srcdir, "-d", self.hdiff_dir ] + files
         self.worker.add_task(
                 CmdTask(*cmds),
                 TaskHandler(self.readyToUpload) )
@@ -142,7 +144,8 @@ class DiffTab(BaseTab):
     @Slot(TaskOutput)
     def readyToUpload(self, msg):
         if not hasattr(self, 'fwReadyToUpload'):
-            hdiff_dir = os.path.join(os.getcwdu(), "hdiff").replace(os.sep, '/')
+            hdiff_dir = os.path.join(os.getcwdu(), self.hdiff_dir)
+            hdiff_dir = hdiff_dir.replace(os.sep, '/')
             self.fwReadyToUpload = (
                 u"Go to <a href='{}'>HDIFF Directory</a> "
                 "to check the result.".format(hdiff_dir)
@@ -197,10 +200,9 @@ class DiffTab(BaseTab):
             if errstr != '':
                 raise Exception(errstr)
             sftpcli = sshcli.open_sftp()
-            srcdir = "hdiff"
-            for f in os.listdir(srcdir):
+            for f in os.listdir(self.hdiff_dir):
                 if f.lower().endswith('.html'):
-                    localfile = os.path.join(srcdir, f)
+                    localfile = os.path.join(self.hdiff_dir, f)
                     remotefile = os.path.join(dstdir, f).replace(os.sep, '/')
                     if not (yield TaskOutput(u'Uploading %s ...' % f)):
                         raise CommandTerminated()

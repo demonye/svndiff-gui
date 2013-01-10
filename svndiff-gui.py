@@ -18,6 +18,10 @@ class MainWindow(QMainWindow):
 
         self.main = MainArea(self)
         self.setCentralWidget(self.main)
+        self.dlgSettings = SettingsTab(self)
+        for i in xrange(self.main.tab.count()):
+            self.main.tab.widget(i).settings = self.dlgSettings
+            self.main.tab.widget(i).init()
 
         self.createToolBar()
         self.createStatusBar()
@@ -34,26 +38,26 @@ class MainWindow(QMainWindow):
         self.lbLoadingGif.setMovie(movie)
 
         self.statusBar()
-        self.statusBar().addPermanentWidget(self.lbLoadingText)
-        self.statusBar().addPermanentWidget(self.lbLoadingGif)
+        self.statusBar().addWidget(self.lbLoadingText)
+        self.statusBar().addWidget(self.lbLoadingGif)
         self.setStyleSheet("QStatusBar::item {border-style:flat;}")
 
     def createToolBar(self):
         self.myTb = self.addToolBar("Svn Tool")
         self.myTb.addAction( QAction(
-            QIcon('stop-task.png'), "S&top Task", self,
-            statusTip="Stop current running task",
+            QIcon('stop-task.png'), "Stop Current Running Task", self,
+            # statusTip="Stop current running task",
             triggered=self.stopCurrentTask) )
         self.myTb.addAction( QAction(
-            QIcon('settings.png'), "&Settings", self,
-            statusTip="Open Settings Dialog",
-            triggered=self.openSettingsDlg) )
+            QIcon('settings.png'), "Open Settings Dialog", self,
+            # statusTip="Open Settings Dialog",
+            triggered=self.openSettingsTab) )
 
     def stopCurrentTask(self):
         TaskWorker().stop_task()
 
-    def openSettingsDlg(self):
-        print "openSettingsDlg"
+    def openSettingsTab(self):
+        self.dlgSettings.show()
 
     def center(self):
         self.move(
@@ -61,6 +65,7 @@ class MainWindow(QMainWindow):
             self.rect().center() )
 
     def closeEvent(self, event):
+        self.dlgSettings.saveConfig()
         self.main.close()
         event.accept()
 
@@ -79,12 +84,13 @@ class MainArea(QWidget):
         self.tab = QTabWidget()
         self.tabDiff = DiffTab(self)
         self.tabClass = ClassTab(self)
-        self.tabSettings = SettingsTab(self)
+        #self.tabSettings = SettingsTab(self)
+        #self.tabSettings.hide()
         self.tab.addTab(self.tabDiff, u'Make Diff')
         self.tab.addTab(self.tabClass, u'Replace Class File')
-        self.tab.addTab(self.tabSettings, u'Settings')
+        #self.tab.addTab(self.tabSettings, u'Settings')
         self.tab.setMinimumSize(700, 400)
-        self.tab.currentChanged.connect(self.tab_changed)
+        #self.tab.currentChanged.connect(self.tab_changed)
         self.tab.setSizePolicy(
             QSizePolicy.Policy(QSizePolicy.Preferred),
             QSizePolicy.Policy(QSizePolicy.Maximum)
@@ -136,11 +142,12 @@ class MainArea(QWidget):
         }
         QTabBar::tab:hover { background: rgb(150,150,150); }
         QTabBar::tab:selected {
+            color: rgb(220,220,220);
         	background: rgb(130,130,130);
             border: 1px inset rgb(150,150,150);
         }
         QPushButton:hover { background: rgb(150,150,150); }
-        QLineEdit, QComboBox, QTableWidget, QTextBrowser, QGroupBox {
+        QLineEdit, QComboBox, QTableWidget, QGroupBox {
             padding: 2px; border-radius: 3px;
         	border:1px solid rgb(150,150,150);
         }
@@ -152,7 +159,12 @@ class MainArea(QWidget):
             padding: 3px;
         	border: 1px solid rgb(150,150,150);
         }
-        QTextBrowser { background:lightyellow; }
+        QTextBrowser {
+            color: white;
+            /* background:lightyellow; */
+            background: rgb(50,50,50);
+            padding: 5px; border: 0;
+        }
         """ )
         # ==== Main Layout ====
 
@@ -173,10 +185,11 @@ class MainArea(QWidget):
         self.txtLog.append(logtext)
 
     def tab_changed(self, idx):
-        if self.tab.currentWidget() == self.tabSettings:
-        	self.grpLog.hide()
-        else:
-        	self.grpLog.show()
+        pass
+        #if self.tab.currentWidget() == self.tabSettings:
+        #	self.grpLog.hide()
+        #else:
+        #	self.grpLog.show()
  
 if __name__ == "__main__":
     app = QApplication(sys.argv)
