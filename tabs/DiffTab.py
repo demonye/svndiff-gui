@@ -105,20 +105,15 @@ class DiffTab(BaseTab):
 
     @Slot(TaskOutput)
     def showChangedFiles(self, msg):
-        if msg.type == OutputType.NOTIFY:
-            if msg.output == u'ENTER':
-                self.btnFind.setDisabled(True)
-                self.showLoading(u'Getting svn status ... ', True)
-            elif msg.output.startswith('EXIT '):
-                self.showLoading('', False)
-                self.btnFind.setDisabled(False)
-            return
-        if msg.type == OutputType.OUTPUT and msg.output:
-            #print "****", msg.output
+        ret = self.taskHandler(msg, u'Getting svn status ... ', self.btnFind)
+        if ret is not None:
             tb = self.lstFiles
             m = msg.output.split()
             if m[0] not in self.statusIcons:
-                self.appendLog(msg)
+                self.appendLog(
+                    TaskOutput(u'Not recognized flag: %s' % m[0],
+                        OutputType.ERROR)
+                    )
                 return
             n = tb.rowCount()
             tb.insertRow(n)
@@ -129,8 +124,6 @@ class DiffTab(BaseTab):
             tb.setItem(n, 2, QTableWidgetItem(m[0]))
             tb.setItem(n, 3, QTableWidgetItem(m[1]))
             tb.setItem(n, 4, QTableWidgetItem(m[2]))
-        else:
-            self.appendLog(msg)
 
 
     def makeDiff(self):
@@ -148,19 +141,14 @@ class DiffTab(BaseTab):
 
     @Slot(TaskOutput)
     def readyToUpload(self, msg):
-        if msg.type == OutputType.NOTIFY:
-            if msg.output == u'ENTER':
-                self.btnDiff.setDisabled(True)
-                self.showLoading(u'Making diff files ... ', True)
-            elif msg.output.startswith('EXIT '):
-                code = int(msg.output.split()[1])
-                if code == 0:
-                    hdiff_dir = os.path.join(os.getcwdu(), "hdiff").replace(os.sep, '/')
-                    self.appendLog(TaskOutput(u"Go to <a href='{}'>HDIFF Directory</a> to check the result.".format(hdiff_dir)))
-                self.showLoading('', False)
-                self.btnDiff.setDisabled(False)
-            return
-        self.appendLog(msg)
+        if not hasattr(self, 'fwReadyToUpload'):
+            hdiff_dir = os.path.join(os.getcwdu(), "hdiff").replace(os.sep, '/')
+            self.fwReadyToUpload = (
+                u"Go to <a href='{}'>HDIFF Directory</a> "
+                "to check the result.".format(hdiff_dir)
+                )
+        self.taskHandler(msg, u'Making diff files ... ',
+                self.btnDiff, self.fwReadyToUpload)
 
     def uploadFiles(self):
         if self.txtBugId.text() == "":
@@ -218,10 +206,8 @@ class DiffTab(BaseTab):
                         raise CommandTerminated()
                     sftpcli.put(localfile, remotefile)
         except CommandTerminated:
+            code = -2
             (yield TaskOutput(u'Uploading Terminited', OutputType.WARN))
-            try: p.terminate()
-            except: pass
-            p.wait()
         except Exception as ex:
             code = -1
             (yield TaskOutput(ex.message, OutputType.ERROR))
@@ -233,19 +219,12 @@ class DiffTab(BaseTab):
 
     @Slot(TaskOutput)
     def uploadHandler(self, msg):
-        if msg.type == OutputType.NOTIFY:
-            if msg.output == u'ENTER':
-                self.btnUpload.setDisabled(True)
-                self.showLoading(u'Uploading diff files ... ', True)
-            elif msg.output.startswith('EXIT '):
-                code = int(msg.output.split()[1])
-                if code == 0:
-                    self.appendLog(TaskOutput(
-                        u"Click <a href='{0}'>{0}</a> to review the result.".format(
-                            self.result_url)))
-                self.showLoading('', False)
-                self.btnUpload.setDisabled(False)
-            return
-        self.appendLog(msg)
+        if not hasattr(self, 'fwUpload'):
+            self.fwUpload = (
+                u"Click <a href='{0}'>{0}</a> to review the result.".format(
+                    self.result_url)
+                )
+        self.taskHandler(msg, u'Uploading diff files ... ',
+                self.btnUpload, self.fwUpload)
 
 

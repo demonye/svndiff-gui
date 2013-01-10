@@ -4,7 +4,7 @@
 from PySide.QtCore import *
 from PySide.QtGui import *
 from yelib.qt.layout import *
-from tabs.BaseTab import BaseTab
+from tabs.BaseTab import *
 from ConfigParser import *
 
 class SettingsTab(BaseTab):
@@ -30,7 +30,7 @@ class SettingsTab(BaseTab):
                 'http url': self.txtHttpUrl,
             },
             'java app': {
-                'types': parent.tabClass.cboAppType
+                'app types': parent.tabClass.cboAppType
             },
             'recent records': {
                 'diff bug id': parent.tabDiff.txtBugId,
@@ -111,7 +111,7 @@ class SettingsTab(BaseTab):
         for sect, sect_v in self.config_map.items():
             for key, ctrl in sect_v.items():
                 value = self.conf(sect, key)
-                if isinstance(ctrl, QLineEdit):
+                if isinstance(ctrl, (QLineEdit, SelectFile)):
                     ctrl.setText(value)
                 elif isinstance(ctrl, dict):
                     ctrl[value].click()
@@ -123,7 +123,7 @@ class SettingsTab(BaseTab):
                             data[k] = self.conf(app, k)
                         ctrl.addItem(app, data)
                 elif hasattr(ctrl, '__call__'):
-                    apps = self.conf(key, 'types').split(',')
+                    apps = self.conf(key, 'app types').split(',')
                     for i in xrange(len(apps)):
                         if value == apps[i].strip():
                             ctrl(i)
@@ -132,7 +132,7 @@ class SettingsTab(BaseTab):
     def save_config(self):
         for sect, sect_v in self.config_map.items():
             for key, ctrl in sect_v.items():
-                if isinstance(ctrl, QLineEdit):
+                if isinstance(ctrl, (QLineEdit, SelectFile)):
                     self.conf(sect, key, ctrl.text())
                 elif isinstance(ctrl, dict):
                     for val, realctrl in ctrl.items():
@@ -140,7 +140,7 @@ class SettingsTab(BaseTab):
                             self.conf(sect, key, val)
                             break
                 elif hasattr(ctrl, '__call__'):
-                    realctrl = self.config_map[key]['types']
+                    realctrl = self.config_map[key]['app types']
                     self.conf(sect, key, realctrl.currentText())
 
         f = open(self.config_fname, "wb")

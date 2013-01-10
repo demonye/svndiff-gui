@@ -151,9 +151,10 @@ def CmdTask(*args):
         (yield TaskOutput(u'END: %s' % args[0]))
     except CommandTerminated:
         (yield TaskOutput(u'TERMINITED: %s' % args[0], OutputType.WARN))
-        try: p.terminate()
+        try:
+            p.terminate()
+            p.wait()
         except: pass
-        p.wait()
     except Exception as ex:
         code = -1
         (yield TaskOutput(ex.message, OutputType.ERROR))
