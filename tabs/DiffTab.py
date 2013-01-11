@@ -98,7 +98,7 @@ class DiffTab(BaseTab):
             self.appendLog(TaskOutput(u'Please set the path of source code in Setting Tab!', OutputType.WARN))
             return
         self.worker.add_task(
-                CmdTask("svndiff", "-c", "-s", srcdir),
+                CmdTask(os.path.join("bin", "svndiff"), "-c", "-s", srcdir),
                 TaskHandler(self.showChangedFiles)
                 )
         tb = self.lstFiles
@@ -136,7 +136,13 @@ class DiffTab(BaseTab):
             item = tb.item(i, 0)
             if item.checkState() == Qt.Checked:
                 files.append(tb.item(i, 4).text())
-        cmds = [ "svndiff", "-s", srcdir, "-d", self.hdiff_dir ] + files
+        cmds = [
+                os.path.join("bin", "svndiff"),
+                "-s", srcdir, "-d", self.hdiff_dir,
+                "-f", os.path.join("bin", "diff"),
+                "-v", os.path.join("bin", "svn"),
+                "-t", os.path.join("html", "diff_template.html"),
+                ] + files
         self.worker.add_task(
                 CmdTask(*cmds),
                 TaskHandler(self.readyToUpload) )
@@ -147,7 +153,7 @@ class DiffTab(BaseTab):
             hdiff_dir = os.path.join(os.getcwdu(), self.hdiff_dir)
             hdiff_dir = hdiff_dir.replace(os.sep, '/')
             self.fwReadyToUpload = (
-                u"Go to <a href='{}'>HDIFF Directory</a> "
+                u"Go to <a href='{}' style='color:DodgerBlue;'>HDIFF Directory</a> "
                 "to check the result.".format(hdiff_dir)
                 )
         self.taskHandler(msg, u'Making diff files ... ',
@@ -223,8 +229,8 @@ class DiffTab(BaseTab):
     def uploadHandler(self, msg):
         if not hasattr(self, 'fwUpload'):
             self.fwUpload = (
-                u"Click <a href='{0}'>{0}</a> to review the result.".format(
-                    self.result_url)
+                u"Click <a href='{0}' style='color:DodgerBlue;'>{0}</a> to review the result.".format(
+                self.result_url)
                 )
         self.taskHandler(msg, u'Uploading diff files ... ',
                 self.btnUpload, self.fwUpload)

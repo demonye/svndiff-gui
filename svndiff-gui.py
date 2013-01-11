@@ -38,8 +38,8 @@ class MainWindow(QMainWindow):
         self.lbLoadingGif.setMovie(movie)
 
         self.statusBar()
-        self.statusBar().addWidget(self.lbLoadingText)
-        self.statusBar().addWidget(self.lbLoadingGif)
+        self.statusBar().addPermanentWidget(self.lbLoadingGif)
+        self.statusBar().addPermanentWidget(self.lbLoadingText)
         self.setStyleSheet("QStatusBar::item {border-style:flat;}")
 
     def createToolBar(self):
@@ -126,46 +126,50 @@ class MainArea(QWidget):
         ])
         #self.btnExit.clicked.connect(self.close)
         self.setLayout(self.lt)
-        self.setStyleSheet("""
-        /*
-        QLabel {
-        	padding:2px;
-        	border:1px inset rgb(150,150,150);
-        	border-radius:3px;
-        	}
-        */
-        QTabBar::tab, QPushButton {
-            padding: 5px;
-            /*background: rgb(180,180,180);*/
-            border: 1px solid rgb(150,150,150);
-            border-radius: 2px;
-        }
-        QTabBar::tab:hover { background: rgb(150,150,150); }
-        QTabBar::tab:selected {
-            color: rgb(220,220,220);
-        	background: rgb(130,130,130);
-            border: 1px inset rgb(150,150,150);
-        }
-        QPushButton:hover { background: rgb(150,150,150); }
-        QLineEdit, QComboBox, QTableWidget, QGroupBox {
-            padding: 2px; border-radius: 3px;
-        	border:1px solid rgb(150,150,150);
-        }
-        QGroupBox{ margin-top: 5px; }
-        QGroupBox::title { left: 10px; top: -5px; }
-        QTabWidget::pane { border:1px solid rgb(150,150,150);} 
-        QTableWidget { padding: 0; }
-        QHeaderView::section {
-            padding: 3px;
-        	border: 1px solid rgb(150,150,150);
-        }
-        QTextBrowser {
-            color: white;
-            /* background:lightyellow; */
-            background: rgb(50,50,50);
-            padding: 5px; border: 0;
-        }
-        """ )
+        if True:
+            self.setStyleSheet("""
+            /*
+            QLabel {
+                padding:2px;
+                border:1px inset rgb(150,150,150);
+                border-radius:3px;
+                }
+            */
+            /*QTabBar::tab, */
+            QPushButton {
+                padding: 5px;
+                /*background: rgb(180,180,180);*/
+                border: 1px solid rgb(150,150,150);
+                border-radius: 2px;
+            }
+            /*
+            QTabBar::tab:hover { background: rgb(150,150,150); }
+            QTabBar::tab:selected {
+                color: rgb(220,220,220);
+                background: rgb(130,130,130);
+                border: 1px inset rgb(150,150,150);
+            }
+            QTabWidget::pane { border:1px solid rgb(150,150,150);}
+            */
+            QPushButton:hover { background: rgb(150,150,150); }
+            QLineEdit, QComboBox, QTableWidget, QGroupBox {
+                padding: 2px; border-radius: 3px;
+                border:1px solid rgb(150,150,150);
+            }
+            QGroupBox{ margin-top: 5px; }
+            QGroupBox::title { left: 10px; top: -5px; }
+            QTableWidget { padding: 0; }
+            QHeaderView::section {
+                padding: 3px;
+                border: 1px solid rgb(150,150,150);
+            }
+            QTextBrowser {
+                color: white;
+                /* background:lightyellow; */
+                background: rgb(50,50,50);
+                padding: 5px; border: 0;
+            }
+            """ )
         # ==== Main Layout ====
 
     def center(self):

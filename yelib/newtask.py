@@ -15,6 +15,8 @@ OutputType = enum(
     'NOTIFY', 'OUTPUT', 'ERROR', 'WARN', 'INFO',
     'DEBUG', 'DEBUG1', 'DEBUG2', 'DEBUG3', 'DEBUG4'
     )
+TASK_START, TASK_STOP, TASK_PAUSE = 0, 1, 2
+local_coding = locale.getdefaultlocale()[1]
 
 class TaskOutput(object):
     num = 0
@@ -32,7 +34,11 @@ class TaskOutput(object):
     def formatted(self):
         return u"{} [{:6s}] {}".format(
                 self.logtime, self.typestr, self.output)
-    def formatted_html(self):
+
+    def __unicode__(self):
+        return self.output.decode(local_coding)
+
+    def __repr__(self):
         color = 'green'
         if self.type == OutputType.ERROR:
             color = 'red'
@@ -43,10 +49,10 @@ class TaskOutput(object):
         return (u"<span style='color:gray;'>{}</span> "
                 u"<span style='color:{};font-weight:bold;'>"
                 u"[{:6s}]</span> {}".format(
-                    self.logtime, color, self.typestr, self.output) )
+                    self.logtime, color, self.typestr,
+                    self.__unicode__() )
+                )
 
-
-TASK_START, TASK_STOP, TASK_PAUSE = 0, 1, 2
 
 @singleton
 class TaskWorker(object):
@@ -138,9 +144,6 @@ def CmdTask(*args):
         cmdline = ' '.join(args)
         #print cmdline
         (yield TaskOutput(u'START: %s ...' % cmdline))
-        errmsg = p.stderr.read()
-        if len(errmsg) > 0:
-        	raise Exception(errmsg)
         running = True
         while True:
             line = p.stdout.readline()
@@ -148,6 +151,9 @@ def CmdTask(*args):
                 break
             if not (yield TaskOutput(line.rstrip(), OutputType.OUTPUT)):
                 raise CommandTerminated()
+        errmsg = p.stderr.read()
+        if len(errmsg) > 0:
+        	raise Exception(errmsg)
         (yield TaskOutput(u'END: %s' % args[0]))
     except CommandTerminated:
         (yield TaskOutput(u'TERMINITED: %s' % args[0], OutputType.WARN))

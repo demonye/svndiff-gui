@@ -1,0 +1,96 @@
+{% autoescape my_escape %}
+<html>
+
+<head>
+    <title></title>
+    <style type='text/css'>
+        html { color: rgb(75,75,75); }
+        body {
+        	background: #EEEEEE;
+            font-family: Helvetica, Arial;
+        }
+        .body-header { height: 30px; }
+        .body-main { padding-bottom: 15px; }
+        .body-footer {
+        	border-top: 2px solid rgb(150,150,150);
+        	padding-top: 10px;
+        }
+        .file-main {
+        	border-top: 1px solid rgb(150,150,150);
+            padding-top: 10px;
+            padding-bottom: 10px;
+        }
+        .file-title {
+            color: rgb(245,245,245);
+            font-size: large;
+            font-weight: bold;
+            background: #B041FF;
+            text-align: center;
+            margin-bottom: 15px;
+        }
+        .tb-file { border-spacing: 0; width: 100%; font-size:small; }
+        .tr-line { background: #AAAAAA; font-size:large; }
+        .tr-add td:last-child { background: #CCCCFF; }
+        .tr-change { background: #99FF99; }
+        .tr-remove td:first-child { background: #FF9999; }
+        .legend { display: inline-block; border: 4px groove #C3C3C3; }
+        .tb-legend { border-spacing: 0; }
+        .tb-legend thead { font-size: large; }
+        .tb-legend tbody { background: #CCCCCC; text-align: center; }
+    </style>
+</head>
+
+<body>
+
+<div class='body-header'></div>
+
+<div class='body-main'>
+    {% for f in diff_files %}
+    <div class='file-main'>
+        <div class='file-title'>{{ f['name'] }}</div>
+        <div class='file-content'>
+            <table class='tb-file'>
+                <tbody>
+                {% for v in f['lines'] %}
+                    <tr class="tr-{{ v['type'] }}">
+                        <td>{{ v['left'] }}</td><td>{{ v['right'] }}</td>
+                    </tr>
+                {% end %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% end %}
+    {% for f in new_files %}
+    <div class='file-main'>
+        <div class='file-title'>
+            New File: <a href=%20{{ f['name'] }}>{{ f['disp_name'] }}</a>
+        </div>
+    </div>
+    {% end %}
+    {% for f in removed_files %}
+    <div class='file-main'>
+        <div class='file-title'>
+            Removed File: {{ f['disp_name'] }}
+        </div>
+    </div>
+    {% end %}
+</div>
+
+<div class='body-footer'>
+    <div class='legend'>
+        <table class='tb-legend'>
+            <thead>
+                <tr> <th colspan=2>Legend</th> </tr>
+            </thead>
+            <tbody>
+                <tr class='tr-remove'> <td>Lines Removed</td> <td> </td> </tr>
+                <tr class='tr-change'> <td colspan=2>Lines changed</td> </tr>
+                <tr class='tr-add'> <td> </td> <td>Lines Added</td> </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+</body>
+</html>
+

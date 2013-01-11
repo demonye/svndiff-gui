@@ -6,7 +6,6 @@ from PySide.QtGui import *
 from yelib.qt.layout import *
 from yelib.util import singleton
 from yelib.newtask import TaskOutput, OutputType
-import locale
 
 class BaseTab(QWidget):
 
@@ -16,7 +15,6 @@ class BaseTab(QWidget):
         self.parent = parent
         #self.setting = parent.tabSettings
         self.setFont(QFont("Monospace", 10))
-        self.coding = locale.getdefaultlocale()[1]
         settings = None
 
     def init(self):
@@ -31,21 +29,21 @@ class BaseTab(QWidget):
         pt = self.parent
         if log.type == OutputType.OUTPUT:
             if print_output:
-                pt.append_log(log.output.decode(self.coding))
+                pt.append_log(unicode(log))
         else:
-            pt.append_log(log.formatted_html())
+            pt.append_log(repr(log))
 
-    def taskHandler(self, taskmsg, loading, btn, finalword=None):
+    def taskHandler(self, taskmsg, loading=None, btn=None, finalword=None):
         if taskmsg.type == OutputType.NOTIFY:
             if taskmsg.output == u'ENTER':
-                btn.setDisabled(True)
-                self.showLoading(loading, True)
+                if btn: btn.setDisabled(True)
+                if loading: self.showLoading(loading, True)
             elif taskmsg.output.startswith('EXIT '):
                 code = int(taskmsg.output.split()[1])
                 if code == 0 and finalword:
                     self.appendLog(TaskOutput(finalword))
-                self.showLoading('', False)
-                btn.setDisabled(False)
+                if loading: self.showLoading('', False)
+                if btn: btn.setDisabled(False)
             return None
         self.appendLog(taskmsg)
         return taskmsg.type == OutputType.OUTPUT and taskmsg.output or None

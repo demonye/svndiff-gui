@@ -27,8 +27,8 @@ def exec_cmd(*args):
     return p[0]
 
 class SvnCmd(object):
-    def __init__(self):
-        self._path = None
+    def __init__(self, path=None):
+        self._path = path
 
     @property
     def path(self):
@@ -56,14 +56,16 @@ class SvnDiff(object):
     ESCAPE_RE = re.compile('[&<>" \t]')
     ESCAPE_DICT = {'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', ' ':'&nbsp;', '\t':'&nbsp;'*4}
 
-    def __init__(self, src_dir='.', save_dir='hdiff', tpl='diff_template.html', getstatus=True):
+    def __init__(self, src_dir='.', save_dir='hdiff',
+            tpl='diff_template.html', svn_cmd='svn', getstatus=True):
         self.src_dir = src_dir
         self.save_dir = save_dir
-        self.svn_cmd = SvnCmd()
+        self.svn_cmd = SvnCmd(svn_cmd)
         self.files = []
         self.newfiles = []
         self.removedfiles = []
-        self.htmltpl = template.Template(open(tpl).read())
+        self.htmltpl = tpl
+        self.template = None
 
         if getstatus:
             self.status()
@@ -174,7 +176,9 @@ class SvnDiff(object):
             diff_files.append(copy.copy(curr_file))
 
         out_html = open(os.path.join(self.save_dir, fname), 'w')
-        out_html.write(self.htmltpl.generate(
+        if self.template is None:
+            self.template = template.Template(open(self.htmltpl).read())
+        out_html.write(self.template.generate(
             diff_files=diff_files,
             new_files=new_or_removed(new_files),
             removed_files=new_or_removed(removed_files),
@@ -192,8 +196,6 @@ class SvnDiff(object):
 
 
 if __name__ == "__main__":
-    save_dir = "hdiff"
-    src_dir = ""
 
     USAGE = "{} [options] diffitems".format(sys.argv[0])
 
@@ -203,8 +205,6 @@ if __name__ == "__main__":
                 "srcdir is the directory where the source code is saved. "
                 "If it is not specified, the current dir will be used." )
              )
-    parser.add_option('-c', '--change', action="store_true", default=False,
-            help = "Output changed files")
     parser.add_option('-d', '--savedir', default="hdiff",
              help = (
                 "savedir is the directory where the diff files will be stored."
@@ -212,28 +212,31 @@ if __name__ == "__main__":
                 "If it is not specified, diff files will be stored in the "
                 "directory 'hdiff'" )
              )
+    parser.add_option('-c', '--change', action="store_true", default=False,
+            help = "Output changed files" )
+    parser.add_option('-v', '--svncmd', default="svn",
+            help = "Specify svn command, default: svn" )
+    parser.add_option('-f', '--diffcmd', default="diff",
+            help = "Specify diff command, default: diff" )
+    parser.add_option('-t', '--template', default="diff_template.html",
+            help = "Html template to build up diff file, default: diff_template.html" )
     (opts, args) = parser.parse_args()
 
-    if opts.srcdir:
-        src_dir = opts.srcdir
-    if opts.savedir:
-        save_dir = opts.savedir
-
-    sd = SvnDiff(src_dir, save_dir)
+    sd = SvnDiff(opts.srcdir, opts.savedir, opts.template, opts.svncmd)
 
     if opts.change:
     	sd.print_changed_files()
     	sys.exit(0)
 
-    force_rmdir(save_dir)
-    os.makedirs(save_dir)
+    force_rmdir(opts.savedir)
+    os.makedirs(opts.savedir)
 
     diff_files = []
     for f in sd.files:
         if args and f not in args:
             continue
         diff_files.append(f)
-        diffargs = [ "diff", f, "--diff-cmd=diff", "-x", "-U10000" ]
+        diffargs = [ "diff", f, "--diff-cmd="+opts.diffcmd, "-x", "-U10000" ]
         sd.gen_diff_file(diffargs, ' '+f)
     new_files = []
     for f in sd.newfiles:

@@ -1,5 +1,6 @@
 import os
 from threading import Thread
+from subprocess import Popen, PIPE
 
 def singleton(cls):
     instances = {}
@@ -41,3 +42,21 @@ def enum(*sequential, **named):
     enums['reverse_mapping'] = reverse
     return type('Enum', (), enums)
 
+def runcmd(*args):
+    popen_args = {
+        'args': args,
+        'stdout': PIPE,
+        'stderr': PIPE,
+        }
+    if os.name != 'posix':
+        popen_args['shell'] = True
+    code = 0
+    p = Popen(**popen_args)
+    while True:
+        line = p.stdout.readline()
+        if line == "":
+            break
+        yield line.rstrip()
+    errmsg = p.stderr.read()
+    if len(errmsg) > 0:
+        raise Exception(errmsg)

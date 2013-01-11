@@ -51,13 +51,15 @@ class SettingsTab(QDialog):
         self.loadConfig()
         # ==== Config ====
 
+        self.btnReload = QPushButton('Reload')
+        self.btnReload.clicked.connect(self.loadConfig)
         self.btnSave = QPushButton('Save')
         self.btnSave.clicked.connect(self.saveConfig)
         self.btnCancel = QPushButton('Cancel')
         self.btnCancel.clicked.connect(self.close)
         self.lt = yBoxLayout([
             [ grpDiff ],
-            [ None, self.btnSave, self.btnCancel ],
+            [ None, self.btnReload, self.btnSave, self.btnCancel ],
             None,
         ])
         self.setLayout(self.lt)
