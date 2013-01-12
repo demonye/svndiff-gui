@@ -31,14 +31,17 @@ class TaskOutput(object):
         self.typestr = OutputType.reverse_mapping[tp]
         self.logtime = time.strftime('%H:%M:%S')
 
+    def __unicode__(self):
+        try:
+            return self.output.decode(local_coding)
+        except UnicodeDecodeError:
+            return self.output
+
     def formatted(self):
         return u"{} [{:6s}] {}".format(
                 self.logtime, self.typestr, self.output)
 
-    def __unicode__(self):
-        return self.output.decode(local_coding)
-
-    def __repr__(self):
+    def formatted_html(self):
         color = 'green'
         if self.type == OutputType.ERROR:
             color = 'red'
@@ -49,8 +52,8 @@ class TaskOutput(object):
         return (u"<span style='color:gray;'>{}</span> "
                 u"<span style='color:{};font-weight:bold;'>"
                 u"[{:6s}]</span> {}".format(
-                    self.logtime, color, self.typestr,
-                    self.__unicode__() )
+                    self.logtime, color, self.typestr, unicode(self))
+                    #self.output.decode(local_coding))
                 )
 
 

@@ -3,12 +3,13 @@
 
 import os
 import time
-import zipfile
+import shutil
+#import zipfile
 from PySide.QtCore import *
 from PySide.QtGui import *
 from yelib.qt.layout import *
 from yelib.newtask import *
-from yelib.util import runcmd
+from yelib.util import *
 from paramiko import SSHClient, AutoAddPolicy
 from tabs.BaseTab import *
 from subprocess import *
@@ -20,15 +21,20 @@ class ClassTab(BaseTab):
     def __init__(self, parent=None):
         super(ClassTab, self).__init__(parent)
 
-        self.local_bakdir = os.path.join("data", "backup")
-        self.local_clsdir = os.path.join("data", "classes")
+        self.backup_dir = os.path.join("data", "backup")
+        self.classes_dir = os.path.join("data", "classes")
+        self.target_dir = os.path.join("data", "target")
 
         self.grpSource = self.createSourceGroup()
         self.grpTargetServer = self.createTargetServerGroup()
         self.grpTargetFile = self.createTargetFileGroup()
         self.grpTargetServer.setSizePolicy(
+            QSizePolicy.Policy(QSizePolicy.Fixed),
             QSizePolicy.Policy(QSizePolicy.Preferred),
-            QSizePolicy.Policy(QSizePolicy.Fixed)
+            )
+        self.grpTargetFile.setSizePolicy(
+            QSizePolicy.Policy(QSizePolicy.Minimum),
+            QSizePolicy.Policy(QSizePolicy.Preferred),
             )
 
         self.lt = yBoxLayout([
@@ -38,8 +44,15 @@ class ClassTab(BaseTab):
         self.setLayout(self.lt)
         self.worker = TaskWorker()
 
-    def init(self):
+    def init(self, settings=None):
+        self.settings = settings
         self.getJarInfo()
+        self.jar_bin = "jar"
+        if settings:
+            java_home = (self.settings.conf('java app', 'java home') or
+                         os.getenv('JAVA_HOME') )
+            if java_home:
+                self.jar_bin = os.path.join(java_home, "bin", "jar")
 
     # ==== Source Group ====
     def createSourceGroup(self):
@@ -106,10 +119,6 @@ class ClassTab(BaseTab):
             [ QLabel(u'Password'), self.txtSrvPwd ],
         ])
         grp.setLayout(lt)
-        grp.setSizePolicy(
-            QSizePolicy.Policy(QSizePolicy.Preferred),
-            QSizePolicy.Policy(QSizePolicy.Fixed)
-            )
         return grp
 
     # ==== Target File ====
@@ -124,10 +133,10 @@ class ClassTab(BaseTab):
         self.cboFetchedFile = QComboBox()
         ltJarInfo = yGridLayout([
             [ QLabel('File Pattern'), self.txtFilePatt,
-              QLabel('Fetched File'), self.cboFetchedFile ],
-            [ QLabel('Remote Path'), (self.txtRemotePath,1,3) ],
+              QLabel('Fetched File'), self.cboFetchedFile, ],
+            [ QLabel('Remote Path'), (self.txtRemotePath,1,4) ],
         ])
-        ltJarInfo.setColumnStretch(1, 10)
+        ltJarInfo.setColumnStretch(4, 10)
         # ==== File Info ====
 
         # ==== Buttons ====
@@ -138,7 +147,7 @@ class ClassTab(BaseTab):
         self.btnCheckInJar = QPushButton('Check If Class In Jar')
         self.btnCheckInJar.clicked.connect(self.checkClassInJar)
         ltBtn = yBoxLayout([
-            [ None, self.btnFetchJar, self.btnCheckInJar, self.btnUpdateJar ]
+            [ self.btnFetchJar, self.btnCheckInJar, self.btnUpdateJar, None ]
         ])
         # ==== Buttons ====
 
@@ -146,9 +155,6 @@ class ClassTab(BaseTab):
             [ ltJarInfo ],
             [ ltBtn ],
         ])
-        #lt = yBoxLayout([
-        #    [ ltSrvInfo, ltGrid ]
-        #])
         grp.setLayout(lt)
         return grp
 
@@ -180,12 +186,7 @@ class ClassTab(BaseTab):
         sftpcli = None
         code = 0
         try:
-            if os.path.exists(self.local_bakdir):
-                if not os.path.isdir(self.local_bakdir):
-                    raise Exception("File %s exists" % self.local_bakdir)
-            else:
-                os.makedirs(self.local_bakdir)
-
+            mkdir_p(self.backup_dir)
             if not (yield TaskOutput(u'Conntecting to %s ...' % sshargs['hostname'])):
                 raise CommandTerminated()
             sshcli.set_missing_host_key_policy(AutoAddPolicy())
@@ -204,7 +205,7 @@ class ClassTab(BaseTab):
                 remotefile = os.path.join(dstdir, f).replace(os.sep, '/')
                 if not (yield TaskOutput(u'Fetchting %s ...' % f)):
                     raise CommandTerminated()
-                sftpcli.get(remotefile, os.path.join(self.local_bakdir, f))
+                sftpcli.get(remotefile, os.path.join(self.backup_dir, f))
                 filenum += 1
                 self.cboFetchedFile.addItem(f)
             if filenum > 1:
@@ -227,7 +228,7 @@ class ClassTab(BaseTab):
     def fetchJarFileHandler(self, msg):
         if not hasattr(self, 'fwFetchJarFile'):
             data_dir = os.path.join(os.getcwdu(),
-                    self.local_bakdir).replace(os.sep, '/')
+                    self.backup_dir).replace(os.sep, '/')
             self.fwFetchJarFile = (
                     u"Go to <a href='{}'>Data Directory</a> "
                     u"to check file.".format(data_dir)
@@ -240,12 +241,35 @@ class ClassTab(BaseTab):
 
     def updateJar(self):
         jarfile = self.cboFetchedFile.currentText()
-        self.worker.add_task(
-                self._updateJar(jarfile),
-                TaskHandler(self.updateJarHandler)
-                )
+        mkdir_p(self.target_dir)
+        shutil.copy(os.path.join(self.backup_dir, jarfile), self.target_dir)
 
-    def _updateJar(self, jarfile):
+        force_rmdir(self.classes_dir)
+        mkdir_p(self.classes_dir)
+        srcdir = self.txtSrcDir.text()
+        cmds = [ self.jar_bin, "uf", os.path.join(self.target_dir, jarfile) ]
+        for i in xrange(self.tbSource.rowCount()):
+            fn = self.tbSource.item(i, 2).text().replace('/', os.sep)
+            srcfile = os.path.join(srcdir, fn)
+            dstfile = os.path.join(self.classes_dir, fn)
+            mkdir_p(os.path.dirname(dstfile))
+            shutil.copy(srcfile, dstfile)
+            cmds += [ "-C", self.classes_dir,  fn ]
+        
+        self.worker.add_task(
+            CmdTask(*cmds),
+            TaskHandler(self.updateJarHandler)
+            )
+
+    @Slot(TaskOutput)
+    def updateJarHandler(self, msg):
+        if not hasattr(self, 'fwUpdateJar'):
+            self.fwUpdateJar = u"Updating successfully!"
+        self.taskHandler(msg, u'Updating file ... ',
+                self.btnUpdateJar, self.fwUpdateJar)
+
+
+    def _uploadJar(self, jarfile):
         (yield TaskOutput(u'ENTER', OutputType.NOTIFY))
         code = 0
         sshcli = SSHClient()
@@ -263,26 +287,16 @@ class ClassTab(BaseTab):
             sshcli.close()
             (yield TaskOutput(u'EXIT %d' % code, OutputType.NOTIFY))
 
-    @Slot(TaskOutput)
-    def updateJarHandler(self, msg):
-        if not hasattr(self, 'fwUpdateJar'):
-            self.fwUpdateJar = u"Updating successfully!"
-        ret = self.taskHandler(msg, u'Updating file ... ',
-                self.btnUpdateJar, self.fwUpdateJar)
-        if ret is not None:
-            if ret[0] == 'FOUND':
-                ico_success = QTableWidgetItem(QIcon('success.png'),'')
-                self.tbSource.setItem(ret[1], 1, ico_success)
-
 
     def checkClassInJar(self):
-        jarfname = os.path.join(self.local_bakdir, self.cboFetchedFile.currentText())
+        jarfname = os.path.join(self.backup_dir, self.cboFetchedFile.currentText())
 
         for i in xrange(self.tbSource.rowCount()):
             ico = QTableWidgetItem(QIcon('notchecked.png'),'')
             self.tbSource.setItem(i, 1, ico)
+
         self.worker.add_task(
-            CmdTask(os.path.join("bin", "jar"), "tf", jarfname),
+            CmdTask(self.jar_bin, "tf", jarfname),
             TaskHandler(self.checkClassInJarHandler)
             )
 
@@ -305,10 +319,10 @@ class ClassTab(BaseTab):
         pth = appdata['path']
         self.txtFilePatt.setText("{}*.{}".format(pfx, sfx))
         self.txtRemotePath.setText(pth)
-        if not os.path.isdir(self.local_bakdir):
+        if not os.path.isdir(self.backup_dir):
             return
         self.cboFetchedFile.clear()
-        for fn in os.listdir(self.local_bakdir):
+        for fn in os.listdir(self.backup_dir):
             if fn.startswith(pfx) and fn.endswith(sfx):
                 self.cboFetchedFile.addItem(fn)
 

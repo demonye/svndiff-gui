@@ -17,7 +17,7 @@ class BaseTab(QWidget):
         self.setFont(QFont("Monospace", 10))
         settings = None
 
-    def init(self):
+    def init(self, *args, **kwargs):
         pass
 
     def showLoading(self, msg, loading=True):
@@ -31,7 +31,7 @@ class BaseTab(QWidget):
             if print_output:
                 pt.append_log(unicode(log))
         else:
-            pt.append_log(repr(log))
+            pt.append_log(log.formatted_html())
 
     def taskHandler(self, taskmsg, loading=None, btn=None, finalword=None):
         if taskmsg.type == OutputType.NOTIFY:

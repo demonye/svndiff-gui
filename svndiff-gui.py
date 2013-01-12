@@ -20,8 +20,8 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self.main)
         self.dlgSettings = SettingsTab(self)
         for i in xrange(self.main.tab.count()):
-            self.main.tab.widget(i).settings = self.dlgSettings
-            self.main.tab.widget(i).init()
+            w = self.main.tab.widget(i)
+            w.init(self.dlgSettings)
 
         self.createToolBar()
         self.createStatusBar()
@@ -84,13 +84,9 @@ class MainArea(QWidget):
         self.tab = QTabWidget()
         self.tabDiff = DiffTab(self)
         self.tabClass = ClassTab(self)
-        #self.tabSettings = SettingsTab(self)
-        #self.tabSettings.hide()
         self.tab.addTab(self.tabDiff, u'Make Diff')
         self.tab.addTab(self.tabClass, u'Replace Class File')
-        #self.tab.addTab(self.tabSettings, u'Settings')
         self.tab.setMinimumSize(700, 400)
-        #self.tab.currentChanged.connect(self.tab_changed)
         self.tab.setSizePolicy(
             QSizePolicy.Policy(QSizePolicy.Preferred),
             QSizePolicy.Policy(QSizePolicy.Maximum)

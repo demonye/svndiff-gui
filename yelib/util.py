@@ -24,6 +24,13 @@ def coroutine(func):
         return cr
     return start
 
+def mkdir_p(dirname):
+    if os.path.exists(dirname):
+        if not os.path.isdir(dirname):
+            raise Exception("File %s exists" % dirname)
+    else:
+        os.makedirs(dirname)
+
 def force_rmdir(dirname):
     dirarr = []
     for root,dirs,files in os.walk(dirname):
