@@ -53,17 +53,23 @@ class SelectFile(yBoxLayout):
     def __init__(self, label, title, filter="*.*", type="file"):
 
         self.txt = QLineEdit()
-        self.label = label
         self.title =  title
         self.filter = filter
         self.type = type
-        self.btn = QPushButton(' / ')
-        self.btn.setFixedWidth(20)
+        self.btn = QPushButton(QIcon('image/open-file.png'), '')
+        self.btn.setStyleSheet("""
+        QPushButton { border:0; }
+        QPushButton:hover { border:0; background:lightyellow; }
+        """)
+        #self.btn.setFixedWidth(20)
         self.btn.clicked.connect(self.selectFile)
 
-        ltData = [
-            [ QLabel(self.label), self.txt, self.btn ]
-        ]
+        ltArr = []
+        if label:
+            ltArr.append(QLabel(label))
+        ltArr += [ self.txt, self.btn ]
+
+        ltData = [ ltArr ]
         super(SelectFile, self).__init__(ltData)
         #self.setLayout(lt)
         #self.setSizePolicy(QSizePolicy(QSizePolicy.MinimumExpanding,QSizePolicy.MinimumExpanding))

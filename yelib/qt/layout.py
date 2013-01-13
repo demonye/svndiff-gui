@@ -27,6 +27,8 @@ class yLayout(QLayout):
     def _add(self, lt, item, *args, **kwargs):
         if isinstance(item, QLayout):
             lt.addLayout(item, *args, **kwargs)
+        elif isinstance(item, str):
+            lt.addWidget(QLabel(item), *args, **kwargs)
         else:
             lt.addWidget(item, *args, **kwargs)
 
