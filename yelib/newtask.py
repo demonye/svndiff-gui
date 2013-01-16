@@ -169,3 +169,47 @@ def CmdTask(*args):
         (yield TaskOutput(ex.message, OutputType.ERROR))
     finally:
         (yield TaskOutput(u'EXIT %d' % code, OutputType.NOTIFY))
+
+
+def CmdTask2(workdir, *args):
+    (yield TaskOutput(u'ENTER', OutputType.NOTIFY))
+    currdir = os.getcwdu()
+    os.chdir(workdir)
+    print workdir
+    popen_args = {
+        'args': args,
+        'stdout': PIPE,
+        'stderr': PIPE,
+        }
+    if os.name != 'posix':
+        popen_args['shell'] = True
+    code = 0
+    p = None
+    try:
+        p = Popen(**popen_args)
+        cmdline = ' '.join(args)
+        #print cmdline
+        (yield TaskOutput(u'START: %s ...' % cmdline))
+        running = True
+        while True:
+            line = p.stdout.readline()
+            if line == "":
+                break
+            if not (yield TaskOutput(line.rstrip(), OutputType.OUTPUT)):
+                raise CommandTerminated()
+        errmsg = p.stderr.read()
+        if len(errmsg) > 0:
+        	raise Exception(errmsg)
+        (yield TaskOutput(u'END: %s' % args[0]))
+    except CommandTerminated:
+        (yield TaskOutput(u'TERMINITED: %s' % args[0], OutputType.WARN))
+        try:
+            p.terminate()
+            p.wait()
+        except: pass
+    except Exception as ex:
+        code = -1
+        (yield TaskOutput(ex.message, OutputType.ERROR))
+    finally:
+        os.chdir(currdir)
+        (yield TaskOutput(u'EXIT %d' % code, OutputType.NOTIFY))

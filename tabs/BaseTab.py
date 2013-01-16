@@ -9,7 +9,6 @@ from yelib.newtask import TaskOutput, OutputType
 
 class BaseTab(QWidget):
 
-
     def __init__(self, parent=None):
         super(BaseTab, self).__init__(parent)
         self.parent = parent
@@ -21,17 +20,19 @@ class BaseTab(QWidget):
         pass
 
     def showLoading(self, msg, loading=True):
-        self.parent.parent().showLoading(msg, loading)
+        #self.parent.parent().showLoading(msg, loading)
+        self.parent.showLoading(msg, loading)
 
     def appendLog(self, log, print_output=False):
         if log.type == OutputType.NOTIFY:
             return
-        pt = self.parent
+        #pt = self.parent
+        pt = self
         if log.type == OutputType.OUTPUT:
             if print_output:
-                pt.append_log(unicode(log))
+                pt.appendLogText(unicode(log))
         else:
-            pt.append_log(log.formatted_html())
+            pt.appendLogText(log.formatted_html())
 
     def taskHandler(self, taskmsg, loading=None, btn=None, finalword=None):
         if taskmsg.type == OutputType.NOTIFY:
@@ -94,4 +95,9 @@ class SelectFile(yBoxLayout):
             if len(fname) > 0:
                 self.txt.setText(fname)
 
+class IconLabel(QPushButton):
+    
+    def __init__(self, icon, text, parent=None):
+        super(IconLabel, self).__init__(icon, text, parent)
+        self.setStyleSheet('border:0')
 

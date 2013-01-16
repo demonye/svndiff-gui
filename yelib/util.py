@@ -25,6 +25,8 @@ def coroutine(func):
     return start
 
 def mkdir_p(dirname):
+    if dirname == "":
+    	return
     if os.path.exists(dirname):
         if not os.path.isdir(dirname):
             raise Exception("File %s exists" % dirname)
