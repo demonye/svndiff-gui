@@ -1,6 +1,7 @@
 #!/usr/bin/env python2
 # -* coding: utf-8 -*-
 
+import os
 from PySide.QtCore import *
 from PySide.QtGui import *
 from yelib.qt.layout import *
@@ -10,6 +11,8 @@ from Crypto.Cipher import DES
 
 myDes = DES.new('rAYoTEcH', DES.MODE_ECB)
 def encrypt(text, errval=''):
+    if text == "":
+    	return text
     try:
         enc = "%04d%s" % (len(text), text)
         enc += ' ' * (8 - len(enc) % 8)
@@ -18,6 +21,8 @@ def encrypt(text, errval=''):
         return errval
 
 def decrypt(code, errval=''):
+    if code == "":
+    	return code
     try:
         enc = myDes.decrypt(code.decode('hex'))
         textlen = int(enc[0:4])
@@ -84,15 +89,15 @@ class SettingsDlg(QDialog):
             ("btnRemoveApp",
                 QPushButton(QIcon('image/delete.png'), ''), 0),
             ("btnCopyApp", QPushButton(QIcon('image/copy.png'), ''), 0),
-            ("txtJavaHome",
-                FileSelector(None, 'Select Java Home', type='dir'), 0),
-            ("txtAppSrcDir",
+            ("txtJarBin", FileSelector(None, 'Select Jar Executable Bin'), 0),
+            ("txtAppSrcRoot",
                 FileSelector(None, 'Select Source Root', type='dir'), 0),
-            ("txtAppJavaDir",
-                FileSelector(None, 'Select Java Dir', type='dir'), 0),
-            ("txtAppClsDir",
-                FileSelector(None, 'Select Class Dir', type='dir'), 0),
-            ("txtAppTarFile", QLineEdit(), 0),
+            ("txtAppWebappDir", QLineEdit(), 0),
+            ("txtAppJavaDir", QLineEdit(), 0),
+            ("txtAppClsDir", QLineEdit(), 0),
+            ("txtAppTgRoot", QLineEdit(), 0),
+            ("txtAppTgClsDir", QLineEdit(), 0),
+            ("txtAppTgJarFile", QLineEdit(), 0),
             ("txtAppSrv", QLineEdit(), 130),
             ("txtAppUser", QLineEdit(), 130),
             ("txtAppPwd", QLineEdit(), 130),
@@ -125,7 +130,6 @@ class SettingsDlg(QDialog):
         #self.lstApp.setEditTriggers(QAbstractItemView.DoubleClicked)
         self.lstApp.itemDoubleClicked.connect(self.lstApp.editItem)
 
-        #self.txtAppTarFile.setFixedHeight(45)
 
         # ==== Svn Settings ====
         grpSvn = QGroupBox('Svn Settings')
@@ -137,6 +141,10 @@ class SettingsDlg(QDialog):
             ])
         )
         grpSvn.layout().setColumnStretch(2, 10)
+        grpSvn.setSizePolicy(
+            QSizePolicy.Policy(QSizePolicy.Fixed),
+            QSizePolicy.Policy(QSizePolicy.Preferred),
+            )
         # ==== Svn Settings ====
 
         # ==== Diff Settings ====
@@ -151,27 +159,51 @@ class SettingsDlg(QDialog):
         # ==== Diff Settings ====
 
         # ==== App Settings ====
-        grpApp = QGroupBox('Applications')
-        grpInfo = QGroupBox('App Detail')
-        grpInfo.setLayout(yGridLayout([
-            [ 'Source Root', self.txtAppSrcDir ], 
-            [ 'Java Dir', self.txtAppJavaDir ], 
+        grpApp = QGroupBox('Webapp Settings')
+        grpLc = QGroupBox()
+        grpLc.setLayout(yGridLayout([
+            [ 'Source Root', (self.txtAppSrcRoot,1,3) ], 
+            [ 'Webapp Dir', self.txtAppWebappDir, 'Java Dir', self.txtAppJavaDir ], 
             [ 'Class Dir', self.txtAppClsDir ], 
-            [ 'Target File', self.txtAppTarFile ],
-            [ 'Target Server', self.txtAppSrv ], 
+            ])
+        )
+        grpTg = QGroupBox()
+        grpTg.setLayout(yGridLayout([
+            [ 'Target Root', self.txtAppTgRoot ], 
+            [ 'Target ClsDir', self.txtAppTgClsDir ],
+            [ 'Target Jar', self.txtAppTgJarFile ],
+            ])
+        )
+        grpSrv = QGroupBox()
+        grpSrv.setLayout(yGridLayout([
+            [ 'Server', self.txtAppSrv ], 
             [ 'Username', self.txtAppUser],
             [ 'Password', self.txtAppPwd ], 
             [ 'Startup', self.txtAppStartup ], 
             [ 'Shutdown', self.txtAppShutdown ], 
             ])
         )
+        style = """QGroupBox {
+        	/*
+        	border:0; border-radius:0;
+        	border-top:1px solid dimgray;
+        	*/
+        	margin:0; padding:0;
+        	}"""
+        grpLc.setStyleSheet(style)
+        grpTg.setStyleSheet(style)
+        grpSrv.setStyleSheet(style)
+
         grpApp.setLayout(
             yBoxLayout([
-                [ 'Java Home', self.txtJavaHome, None ],
+                [ 'Jar Executable Bin', self.txtJarBin ],
                 [ yBoxLayout([
                     [ self.lstApp ],
                     [ self.btnAddApp, self.btnRemoveApp, self.btnCopyApp ],
-                    ]) , grpInfo
+                  ]),
+                  yBoxLayout([
+                    [ grpLc ], [ grpTg ], [ grpSrv ]
+                  ])
                 ],
             ])
         )
@@ -183,8 +215,7 @@ class SettingsDlg(QDialog):
         self.notification = QLabel()
         self.notification.setStyleSheet('color:red;')
         self.setLayout(yBoxLayout([
-            [ grpSvn ],
-            [ grpDiff ],
+            [ grpSvn, grpDiff ],
             [ grpApp ],
             None,
             [ self.notification, None, self.btnSave, self.btnCancel ],
@@ -258,7 +289,7 @@ class SettingsDlg(QDialog):
         self.txtDiffPwd.setText(decrypt(self.conf('diff', 'password')))
         self.txtDiffDir.setText(self.conf('diff', 'remote dir'))
         self.txtDiffUrl.setText(self.conf('diff', 'http url'))
-        self.txtJavaHome.setText(self.conf('app', 'java home'))
+        self.txtJarBin.setText(self.conf('app', 'jar bin'))
 
         self.lstApp.clear()
         for _ in self.conf('app', 'list').split(','):
@@ -269,10 +300,13 @@ class SettingsDlg(QDialog):
         self.lstApp.setCurrentRow(0)
 
     def _saveapp(self, app):
-        self.conf(app, 'source root', self.txtAppSrcDir.text())
+        self.conf(app, 'source root', self.txtAppSrcRoot.text())
+        self.conf(app, 'target root', self.txtAppTgRoot.text())
+        self.conf(app, 'webapp dir', self.txtAppWebappDir.text())
         self.conf(app, 'java dir', self.txtAppJavaDir.text())
         self.conf(app, 'class dir', self.txtAppClsDir.text())
-        self.conf(app, 'target file', self.txtAppTarFile.text())
+        self.conf(app, 'target class dir', self.txtAppTgClsDir.text())
+        self.conf(app, 'target jar file', self.txtAppTgJarFile.text())
         self.conf(app, 'server', self.txtAppSrv.text())
         self.conf(app, 'username', self.txtAppUser.text())
         self.conf(app, 'password', encrypt(self.txtAppPwd.text()))
@@ -280,10 +314,13 @@ class SettingsDlg(QDialog):
         self.conf(app, 'shutdown', self.txtAppShutdown.text())
 
     def _loadapp(self, app):
-        self.txtAppSrcDir.setText(self.conf(app, 'source root'))
+        self.txtAppSrcRoot.setText(self.conf(app, 'source root'))
+        self.txtAppTgRoot.setText(self.conf(app, 'target root'))
+        self.txtAppWebappDir.setText(self.conf(app, 'webapp dir'))
         self.txtAppJavaDir.setText(self.conf(app, 'java dir'))
         self.txtAppClsDir.setText(self.conf(app, 'class dir'))
-        self.txtAppTarFile.setText(self.conf(app, 'target file'))
+        self.txtAppTgClsDir.setText(self.conf(app, 'target class dir'))
+        self.txtAppTgJarFile.setText(self.conf(app, 'target jar file'))
         self.txtAppSrv.setText(self.conf(app, 'server'))
         self.txtAppUser.setText(self.conf(app, 'username'))
         self.txtAppPwd.setText(decrypt(self.conf(app, 'password')))
@@ -317,7 +354,7 @@ class SettingsDlg(QDialog):
         self.conf('diff', 'password', encrypt(self.txtDiffPwd.text()))
         self.conf('diff', 'remote dir', self.txtDiffDir.text())
         self.conf('diff', 'http url', self.txtDiffUrl.text())
-        self.conf('app', 'java home', self.txtJavaHome.text())
+        self.conf('app', 'jar bin', self.txtJarBin.text())
 
         f = open(self.config_fname, "wb")
         self.config.write(f)

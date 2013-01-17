@@ -6,6 +6,7 @@ import glob
 from PySide.QtCore import *
 from PySide.QtGui import *
 from paramiko import SSHClient, AutoAddPolicy
+import zipfile
 import shutil
 
 from yelib.qt.layout import *
@@ -18,7 +19,8 @@ from SettingsDlg import decrypt
 
 hdiff_dir = os.path.join("data", "hdiff")
 backup_dir = os.path.join("data", "backup")
-classes_dir = os.path.join("data", "classes")
+clstemp_dir = os.path.join("data", "clstemp")
+approot_dir = os.path.join("data", "approot")
 target_dir = os.path.join("data", "target")
 target_file = os.path.join(target_dir, "target.jar")
 
@@ -28,7 +30,7 @@ class MainArea(QWidget):
         super(MainArea, self).__init__(parent)
 
         self.settings = parent.dlgSettings
-        self.java_home = self.settings.conf('app', 'java home')
+        self.jar_bin = self.settings.conf('app', 'jar bin')
 
         # ==== File List ====
         # Application Combo
@@ -86,8 +88,8 @@ class MainArea(QWidget):
         self.btnGetStatus.setFixedSize(120, 30)
         self.btnMakeDiff = QPushButton(QIcon('image/makediff1.png'), u'Make Diff')
         self.btnMakeDiff.setFixedSize(120, 30)
-        self.btnDeployCls = QPushButton(QIcon('image/deployclass1.png'), u'Deploy Class')
-        self.btnDeployCls.setFixedSize(120, 30)
+        self.btnDeployNew = QPushButton(QIcon('image/deployclass1.png'), u'Deploy New')
+        self.btnDeployNew.setFixedSize(120, 30)
         # ==== Buttons ====
 
         # ==== Main Layout ====
@@ -98,7 +100,7 @@ class MainArea(QWidget):
             [ self.grpMain ],
             [ self.btnGetStatus, None,
               QLabel('Bug Id'), self.txtBugId, self.btnMakeDiff, None,
-              self.btnDeployCls ],
+              self.btnDeployNew ],
             [ self.grpLog ],
         ])
         #self.btnExit.clicked.connect(self.close)
@@ -115,7 +117,7 @@ class MainArea(QWidget):
         self.worker = TaskWorker()
         self.btnGetStatus.clicked.connect(self.getStatus)
         self.btnMakeDiff.clicked.connect(self.makeDiff)
-        self.btnDeployCls.clicked.connect(self.deployCls)
+        self.btnDeployNew.clicked.connect(self.deployNew)
         self.workdir = os.getcwdu()
         self.targetFile = None
 
@@ -273,7 +275,7 @@ class MainArea(QWidget):
             (yield TaskOutput(ex.message, OutputType.ERROR))
         finally:
             if sftpcli: sftpcli.close()
-            sshcli.close()
+            if sshcli: sshcli.close()
             (yield TaskOutput(u'EXIT %d' % code, OutputType.NOTIFY))
 
 
@@ -301,167 +303,213 @@ class MainArea(QWidget):
                 self.btnMakeDiff, self.fwUpload)
 
 
-    def deployCls(self):
+    def deployNew(self):
         st = self.settings
         app = self.cboApp.itemText(self.cboApp.currentIndex())
         try:
-            force_rmdir(classes_dir)
-            mkdir_p(classes_dir)
+            force_rmdir(approot_dir)
+            force_rmdir(clstemp_dir)
+            mkdir_p(approot_dir)
+            mkdir_p(clstemp_dir)
         except Exception as ex:
             self.appendLog(TaskOutput(ex.message, OutputType.ERROR))
             return
 
-        # ==== Copy files to classes dir ====
-        tb = self.lstFiles
-        for i in xrange(tb.rowCount()):
-            item = tb.item(i, 0)
-            if item.checkState() != Qt.Checked:
-                continue
-            srcfile = tb.item(i, 4).text()
-            dstfile = tb.item(i, 3).text().replace('/', os.sep)
-            prename, ext = os.path.splitext(os.path.basename(dstfile))
-            if ext.lower() != '.java':
-                continue
-
-            javadir = st.conf(app, 'java dir')
-            clsdir = st.conf(app, 'class dir')
-            dstdir = os.path.dirname(srcfile.replace(javadir, '')).strip(os.sep)
-            clsfile = os.path.join(clsdir, dstdir, prename+".class")
-            if os.path.exists(clsfile):
-                dstdir = os.path.join(classes_dir, dstdir)
-                mkdir_p(dstdir)
-                try:
-                    shutil.copy(clsfile, dstdir)
-                except Exception as ex:
-                    self.appendLog(TaskOutput(ex.message, OutputType.ERROR))
-                    return
-            else:
-                self.appendLog(
-                    TaskOutput('Class file does not exist: {}'.format(clsfile),
-                    OutputType.ERROR)
-                    )
-                return
-        # ==== Copy files to classes dir ====
-
-
-        tgfile = st.conf(app, 'target file')
         hostname = st.conf(app, 'server')
-        sshargs = {
-            'hostname': hostname,
-            'username': st.conf(app, 'username'),
-            'password': decrypt(st.conf(app, 'password')),
-            'timeout' : 10,
-            'compress': True,
-            }
-        if tgfile.lower().endswith('.jar'):
-            if hostname in ('localhost', '127.0.0.1'):
-                files = glob.glob(tgfile)
-                if len(files) != 1:
-                    self.appendLog(
-                        TaskOutput("Found %d file(s): %s" % (len(files), tgfile),
-                        OutputType.ERROR)
-                        )
-                    return
-                self.targetFile = files[0]
-                tgbsname = os.path.basename(self.targetFile)
-                tgbkname = os.path.join(backup_dir, tgbsname)
-                try:
-                    if not os.path.exists(tgbkname):
-                        shutil.copy(self.targetFile, backup_dir)
-                    shutil.copy(tgbkname, target_file)
-                except Exception as ex:
-                    self.appendLog(TaskOutput(ex.message, OutputType.ERROR))
-                    return
-            else:
-                # ==== Fetch File ====
-                self.worker.add_task(
-                        self._fetchTarget(
-                            st.conf(app, 'target file'),
-                            **sshargs ),
-                        TaskHandler(self.fetchTargetHandler)
-                        )
-                # ==== Fetch File ====
-
-            # ==== Update File ====
-            self.worker.add_task(
-                CmdTask2(
-                    classes_dir,
-                    os.path.join(self.java_home, "bin", "jar"),
-                    "-uf", os.path.join("..", "target", "target.jar"), "*"
-                    ), 
-                TaskHandler(self.updateTargetHandler)
+        sshargs = {}
+        if hostname not in ('localhost', '127.0.0.1'):
+            sshargs = {
+                'hostname': hostname,
+                'username': st.conf(app, 'username'),
+                'password': decrypt(st.conf(app, 'password')),
+                'timeout' : 10,
+                'compress': True,
+                }
+        self.worker.add_task(
+                self._deployNew(sshargs),
+                TaskHandler(self.deployNewHandler)
                 )
-            # ==== Update File ====
-        elif tgfile.tolower().endswith('.class'):
-            pass
+
+    def _copyfile(self, ssh, sftp, from_file, to_file, method='get', overwrite=True):
+        if os.path.isdir(to_file):
+            fname = os.path.basename(from_file)
+            to_dir = to_file
+            to_file = os.path.join(to_file, fname)
         else:
-            self.appendLog(
-                TaskOutput('Cannot deal with target file: %s' % tgfile,
-                OutputType.ERROR)
-                )
+            to_dir = os.path.dirname(to_file)
+        if not overwrite and os.path.exists(to_file):
             return
+        if not os.path.exists(to_dir):
+            mkdir_p(to_dir)
 
+        if sftp:
+            if method == 'put':
+                sftp.put(from_file, to_file)
+            else:
+                sftp.get(from_file, to_file)
+        else:
+            shutil.copy(from_file, to_file)
 
-        # ==== Upload File ====
-        #self.worker.add_task(
-        #        self._uploadTarget(
-        #            st.conf(app, 'startup'),
-        #            st.conf(app, 'shutdown'),
-        #            **sshargs ),
-        #        TaskHandler(self.uploadTargetHandler)
-        #        )
-        # ==== Upload File ====
+    def _copyfiles(self, ssh, sftp, wildcard, to_dir, method='get', overwrite=True):
+        if sftp:
+            files = []
+            dn = os.path.dirname(wildcard)
+            bn = os.path.basename(wildcard)
+            _, stdout, stderr = ssh.exec_command(
+                    "find %s -maxdepth 1 -type f -name %s" % (dn, bn)
+                    )
+            files = stdout.read().split()
+            errmsg = stderr.read()
+            if errmsg: raise Exception(errmsg) 
+        else:
+            files = glob.glob(wildcard)
+        mkdir_p(to_dir)
+        for fn in files:
+            self._copyfile(ssh, sftp, fn, to_dir, method, overwrite)
 
-    def _uploadTargetLocal(self, startup=None, shutdown=None):
-        os.system(shutdown)
-        shutil.copy(target_file, self.targetFile)
-        os.shutdown(startup)
-
-    def _fetchTarget(self, target, **sshargs):
+#
+# data/backup/appname/
+#    |_ other files 
+#    |_ WEB-INF/classes/com/.../*.class
+#    \_ WEB-INF/lib/*.jar
+# data/approot  ----------- Stores all new stuff to be deployed
+#    |_ other files 
+#    |_ WEB-INF/classes/com/.../*.class
+#    \_ WEB-INF/lib/*.jar
+# data/clstemp  ----------- new classes to be put in jar
+#    \_ com/.../*.class
+#
+    def _deployNew(self, sshargs):
         (yield TaskOutput(u'ENTER', OutputType.NOTIFY))
+        st = self.settings
+        app = self.cboApp.itemText(self.cboApp.currentIndex())
         sshcli = SSHClient()
         sftpcli = None
+        tb = self.lstFiles
         code = 0
+
         try:
-            mkdir_p(target_dir)
-            if not (yield TaskOutput(u'Conntecting to %s ...' % sshargs['hostname'])):
+            if sshargs:
+                if not (yield TaskOutput(u'Conntecting to %s ...' % sshargs['hostname'])):
+                    raise CommandTerminated()
+                sshcli.set_missing_host_key_policy(AutoAddPolicy())
+                sshcli.connect(**sshargs)
+                if not (yield TaskOutput(u'Connected!')):
+                    raise CommandTerminated()
+                sftpcli = sshcli.open_sftp()
+
+            items = [ tb.item(i,3).text() for i in xrange(tb.rowCount())
+                    if tb.item(i,0).checkState() == Qt.Checked ]
+            clsitems = []  # items found in class dir or non-java-file
+            jaritems = {}   # items found in jar file
+
+            # === Fetch and backup files ====
+            # backup class files, and copy them to approot dir
+            if not (yield TaskOutput(u'Making backup ...')):
                 raise CommandTerminated()
-            sshcli.set_missing_host_key_policy(AutoAddPolicy())
-            sshcli.connect(**sshargs)
-            if not (yield TaskOutput(u'Connected, fetchting file ...')):
+            srcroot = st.conf(app, 'source root')
+            webappdir = st.conf(app, 'webapp dir')
+            javadir = st.conf(app, 'java dir')
+            clsdir = st.conf(app, 'class dir')
+            tgroot = st.conf(app, 'target root')
+            tgsep = tgroot[0]
+            tgclsdir = st.conf(app, 'target class dir')
+            appbakdir = os.path.join(backup_dir, app)
+            for fn in items:
+                if fn.endswith('.java'):
+                    fn = fn.replace(javadir.replace(os.sep, '/'), '').lstrip('/')
+                    _clsfn = fn[0:-5]+'.class'
+                    clsfn = os.path.join(tgclsdir, _clsfn).replace(os.sep, tgsep)
+                    tgt_f = os.path.join(tgroot, clsfn).replace(os.sep, tgsep)
+                    bak_f = os.path.join(appbakdir, clsfn)
+                    new_f = os.path.join(srcroot, clsdir, _clsfn)
+                    tmp_f = os.path.join(approot_dir, clsfn)
+                    clsitems.append(_clsfn)
+                else:
+                    fn = fn.replace(webappdir.replace(os.sep, '/'), '').lstrip('/')
+                    tgt_f = os.path.join(tgroot, fn).replace(os.sep, tgsep)
+                    bak_f = os.path.join(appbakdir, fn)
+                    new_f = os.path.join(srcroot, webappdir, fn)
+                    tmp_f = os.path.join(approot_dir, fn)
+                try:
+                    self._copyfile(sshcli, sftpcli, tgt_f, bak_f, overwrite=False)
+                    self._copyfile(None, None, new_f, tmp_f)
+                except IOError as ex:   # No file found
+                    if ex.args[0] != 2:
+                        raise ex
+
+            # 1. backup jar files
+            # 2. copy them to approot dir 
+            # 3. will be updated with clstemp fileslater
+            tgjarfile = st.conf(app, 'target jar file')
+            jardir = os.path.dirname(tgjarfile)
+            bakjardir = os.path.join(appbakdir, jardir)
+            newjardir = os.path.join(approot_dir, jardir)
+            self._copyfiles(sshcli, sftpcli,
+                    os.path.join(tgroot, tgjarfile).replace(os.sep, tgsep),
+                    bakjardir, overwrite=False)
+            self._copyfiles(None, None,
+                    os.path.join(appbakdir, tgjarfile),
+                    newjardir)
+
+            # copy new class files to temp dir, for updating jar file above
+            for jar in os.listdir(newjardir):
+                zf = zipfile.ZipFile(os.path.join(newjardir, jar))
+                zflist = zf.namelist()
+                jaritems[jar] = []
+                for fn in clsitems:
+                    if fn in zflist:
+                        new_f = os.path.join(srcroot, clsdir, fn)
+                        tmp_f = os.path.join(clstemp_dir, fn)
+                        self._copyfile(None, None, new_f, tmp_f)
+                        jaritems[jar].append(fn)    # clsss in which jarfile
+            # copy new class files to temp dir, for updating jar file above
+            # ==== Fetch and backup files ====
+
+            # ==== Copy into approot_dir and update ====
+            if not (yield TaskOutput(u'Copying new files and updating ...')):
                 raise CommandTerminated()
-            ret = sshcli.exec_command("""
-            target="{}"
-            n=$(ls -1 $target 2>&- |wc -l)
-            if [ $n -ne 1 ]; then
-                echo "Found $n file(s), please check your settings!" 1>&2
-            else
-                fn=$(ls -1 $target)
-                [ ! -f $fn.bak ] && cp $fn $fn.bak
-                echo $fn
-            fi
-            """.format(target) )
-            errstr = ret[2].read()
-            if errstr != '':
-                raise Exception(errstr)
-            sftpcli = sshcli.open_sftp()
-            fn =  ret[1].readlines()[0].rstrip()
-            #local_fn = os.path.basename(fn)
-            if not (yield TaskOutput(u'Fetchting %s.bak ...' % fn)):
-                raise CommandTerminated()
-            sftpcli.get(fn+".bak", target_file)
-            (yield TaskOutput(fn, OutputType.OUTPUT))
+            for jar, files  in jaritems.items():
+                args = [ os.path.join(self.jar_bin), "-uf",
+                        os.path.join("..", "..", newjardir, jar)
+                       ]
+                args += files
+                self.worker.add_task(
+                    CmdTask2(clstemp_dir, *args),
+                    TaskHandler(self.taskHandler)
+                    )
+            # ==== Copy into approot_dir and update ====
+
+            # ==== Replace or upload  files ====
+            #if not (yield TaskOutput(u'Deploying new files to target ...')):
+            #    raise CommandTerminated()
+            # ==== Replace or upload  files ====
+
         except CommandTerminated:
             code = -2
-            (yield TaskOutput(u'TERMINITED: Fetching Target File ...', OutputType.WARN))
+            (yield TaskOutput(u'Uploading Terminited', OutputType.WARN))
         except Exception as ex:
             code = -1
-            print ex
             (yield TaskOutput(ex.message, OutputType.ERROR))
         finally:
             if sftpcli: sftpcli.close()
-            sshcli.close()
+            if sshcli: sshcli.close()
             (yield TaskOutput(u'EXIT %d' % code, OutputType.NOTIFY))
+
+
+    def _uploadTargetLocal(self, st, app):
+        self.worker.add_task(
+            CmdTask(*(st.conf(app, 'shutdown').split())),
+            TaskHandler(self.uploadTargetHandler)
+            )
+        self.worker.add_task(
+            self._copyToLocalTarget(st, app),
+            TaskHandler(self.uploadTargetHandler)
+            )
+        self.worker.add_task(
+            CmdTask(*(st.conf(app, 'startup').split())),
+            TaskHandler(self.uploadTargetHandler)
+            )
 
 
     def _uploadTarget(self, shutdown, startup, **sshargs):
@@ -506,27 +554,23 @@ class MainArea(QWidget):
             (yield TaskOutput(u'TERMINITED: Target file not uploaded ... ', OutputType.WARN))
         except Exception as ex:
             code = -1
-            print ex
             (yield TaskOutput(ex.message, OutputType.ERROR))
         finally:
             if sftpcli: sftpcli.close()
             sshcli.close()
             (yield TaskOutput(u'EXIT %d' % code, OutputType.NOTIFY))
 
-    def _uploadTargetHandler(self):
+    def deployNewHandler(self, msg):
+        if not hasattr(self, 'fwDevplyNew'):
+            self.fwDeployNew = u"Dploied New Files ..."
+        self.taskHandler(msg, u'Deploying Target File ... ',
+                self.btnDeployNew, self.fwDeployNew)
+
+    def uploadTargetHandler(self):
         if not hasattr(self, 'fwUploadTarget'):
             self.fwUploadTarget = u"Uploaded target file."
         self.taskHandler(msg, u'Uploading target file ... ',
-                self.btnDeployCls, self.fwUploadTarget)
-
-    @Slot(TaskOutput)
-    def fetchTargetHandler(self, msg):
-        if not hasattr(self, 'fwFetchTarget'):
-            self.fwFetchTarget = u"Fetched target file."
-        ret = self.taskHandler(msg, u'Fetching target file ... ',
-                self.btnDeployCls, self.fwFetchTarget)
-        if ret is not None:
-            self.targetFile = ret
+                self.btnDeployNew, self.fwUploadTarget)
 
 
     @Slot(TaskOutput)
@@ -534,7 +578,7 @@ class MainArea(QWidget):
         if not hasattr(self, 'fwUpdateTarget'):
             self.fwUpdateTarget = u"Updated target file."
         self.taskHandler(msg, u'Updating target file ... ',
-                self.btnDeployCls, self.fwUpdateTarget)
+                self.btnDeployNew, self.fwUpdateTarget)
 
 
     def closeEvent(self, event):
