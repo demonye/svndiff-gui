@@ -82,7 +82,7 @@ class MainWindow(QMainWindow):
         self.createStatusBar()
 
         self.setWindowTitle('Svn Tool')
-        self.setWindowIcon(QIcon('logo.png'))
+        self.setWindowIcon(QIcon('image/logo.png'))
         self.setStyleSheet(STYLE_SHEET)
 
     def createStatusBar(self):
@@ -104,7 +104,7 @@ class MainWindow(QMainWindow):
             statusTip="Open Settings Dialog",
             triggered=self.openSettingsTab) )
         self.myTb.addAction( QAction(
-            QIcon('image/stop-task.png'), "Stop Current Running Task", self,
+            QIcon('image/stop.png'), "Stop Current Running Task", self,
             statusTip="Stop Current Running Task",
             triggered=self.stopCurrentTask) )
 

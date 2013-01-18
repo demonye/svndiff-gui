@@ -36,9 +36,14 @@ class MainArea(QWidget):
         # Application Combo
         self.cboApp = QComboBox()
         self.cboApp.activated.connect(self.selectApp)
-        self.txtSrcDir = QLineEdit()
-        self.txtSrcDir.setReadOnly(True)
-        self.txtSrcDir.setMinimumWidth(350)
+        self.txtSrv = QLineEdit()
+        self.txtSrv.setReadOnly(True)
+        self.txtSrcRoot = QLineEdit()
+        self.txtSrcRoot.setReadOnly(True)
+        self.txtSrcRoot.setMinimumWidth(350)
+        self.txtTgRoot = QLineEdit()
+        self.txtTgRoot.setReadOnly(True)
+        self.txtTgRoot.setMinimumWidth(350)
 
         # Main Group
         self.grpMain = QGroupBox('Work Area')
@@ -59,8 +64,17 @@ class MainArea(QWidget):
         tb.setAlternatingRowColors(True)
         self.lstFiles = tb
         ltMain = yBoxLayout([
-            [ 'App', self.cboApp, None,
-              'Source Dir', self.txtSrcDir ],
+            [
+                yGridLayout([
+                    [ 'App', self.cboApp ],
+                    [ 'Server', self.txtSrv ],
+                    ]),
+                None,
+                yGridLayout([
+                  [ 'Source Root', self.txtSrcRoot ],
+                  [ 'Target Root', self.txtTgRoot ],
+                  ]),
+            ],
             [ self.lstFiles ],
         ])
         self.grpMain.setLayout(ltMain)
@@ -84,12 +98,15 @@ class MainArea(QWidget):
         # ==== Log ====
 
         # ==== Buttons ====
-        self.btnGetStatus = QPushButton(QIcon('image/getstatus1.png'), u'Get Status')
-        self.btnGetStatus.setFixedSize(120, 30)
-        self.btnMakeDiff = QPushButton(QIcon('image/makediff1.png'), u'Make Diff')
-        self.btnMakeDiff.setFixedSize(120, 30)
-        self.btnDeployNew = QPushButton(QIcon('image/deployclass1.png'), u'Deploy New')
-        self.btnDeployNew.setFixedSize(120, 30)
+        self.btnGetStatus = QPushButton(QIcon('image/refresh.png'), u'Get Status')
+        self.btnGetStatus.setFixedSize(110, 28)
+        self.btnMakeDiff = QPushButton(QIcon('image/game-chip.png'), u'Make Diff')
+        self.btnMakeDiff.setFixedSize(110, 28)
+        self.btnDeployNew = QPushButton(QIcon('image/organization.png'), u'Deploy New')
+        self.btnDeployNew.setFixedSize(110, 28)
+        self.chkBackup = QCheckBox('Backup')
+        self.btnRestore = QPushButton(QIcon('image/undo.png'), u'Restore')
+        self.btnRestore.setFixedSize(110, 28)
         # ==== Buttons ====
 
         # ==== Main Layout ====
@@ -99,8 +116,8 @@ class MainArea(QWidget):
         lt = yBoxLayout([
             [ self.grpMain ],
             [ self.btnGetStatus, None,
-              QLabel('Bug Id'), self.txtBugId, self.btnMakeDiff, None,
-              self.btnDeployNew ],
+              QLabel('BugId'), self.txtBugId, self.btnMakeDiff, None,
+              self.btnDeployNew, self.chkBackup, self.btnRestore ],
             [ self.grpLog ],
         ])
         #self.btnExit.clicked.connect(self.close)
@@ -149,20 +166,22 @@ class MainArea(QWidget):
 
     def selectApp(self, idx):
         sect = self.cboApp.itemText(idx)
-        srcdir = self.settings.conf(sect, 'source root')
-        self.txtSrcDir.setText(srcdir)
+        st = self.settings
+        self.txtSrv.setText(st.conf(sect, 'server'))
+        self.txtSrcRoot.setText(st.conf(sect, 'source root'))
+        self.txtTgRoot.setText(st.conf(sect, 'target root'))
 
     def updateAppList(self):
         st = self.settings
         applist = st.conf('app', 'list').split(',')
         self.cboApp.clear()
         for app in applist:
-            self.cboApp.addItem(QIcon('image/application.png'), app.strip())
+            self.cboApp.addItem(app.strip())
         if self.cboApp.count() > 0:
             self.selectApp(0)
 
     def getStatus(self):
-        srcdir = self.txtSrcDir.text()
+        srcdir = self.txtSrcRoot.text()
         if srcdir == "":
             self.appendLog(TaskOutput(u'Please set the path of source code in Setting Tab!', OutputType.WARN))
             return
@@ -201,7 +220,7 @@ class MainArea(QWidget):
             self.appendLog(TaskOutput(u"!!! Please input Bug Id !!!", OutputType.WARN))
             return
 
-        srcdir = self.txtSrcDir.text()
+        srcdir = self.txtSrcRoot.text()
         files = []
         tb = self.lstFiles
         for i in xrange(tb.rowCount()):
@@ -474,17 +493,14 @@ class MainArea(QWidget):
                         os.path.join("..", "..", newjardir, jar)
                        ]
                 args += files
-                self.worker.add_task(
-                    CmdTask2(clstemp_dir, *args),
-                    TaskHandler(self.taskHandler)
-                    )
+                self.worker.add_sub_task(CmdTask2(clstemp_dir, *args))
             # ==== Copy into approot_dir and update ====
 
             # ==== Replace or upload  files ====
             #if not (yield TaskOutput(u'Deploying new files to target ...')):
             #    raise CommandTerminated()
             # ==== Replace or upload  files ====
-
+            (yield TaskOutpu('WAITSUB', OutputType.NOTIFY))
         except CommandTerminated:
             code = -2
             (yield TaskOutput(u'Uploading Terminited', OutputType.WARN))
@@ -562,7 +578,7 @@ class MainArea(QWidget):
 
     def deployNewHandler(self, msg):
         if not hasattr(self, 'fwDevplyNew'):
-            self.fwDeployNew = u"Dploied New Files ..."
+            self.fwDeployNew = u"Deployed New Files ..."
         self.taskHandler(msg, u'Deploying Target File ... ',
                 self.btnDeployNew, self.fwDeployNew)
 

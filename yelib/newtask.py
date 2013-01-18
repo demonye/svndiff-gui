@@ -62,12 +62,13 @@ class TaskWorker(object):
 
     def __init__(self, autostart=True, debug_level=OutputType.INFO):
         self._todo = Queue.Queue()
+        self._todo_sub = Queue.Queue()
         self._workthd = Thread(target=self.run)
         self._lock = Lock()
         self._task_run = False
         self._dbg_lvl = debug_level
         if autostart:
-        	self._workthd.start()
+            self._workthd.start()
 
     #def __del__(self):
     #    self.stop()
@@ -85,6 +86,8 @@ class TaskWorker(object):
         if start:
             self.start_task()
 
+    def add_sub_task(self, task):
+        self._todo_sub.put(task)
     def start_task(self):
         self._task_run = TASK_START
     def stop_task(self):
@@ -94,8 +97,10 @@ class TaskWorker(object):
 
     def run(self):
         while True:
+            task = None
             try:
-                task, hdlr, self._task_run = self._todo.get(timeout=0.1)
+                task, hdlr, self._task_run = self._todo.get() #timeout=0.1)
+
                 if type(task) == str and task == 'quit':
                     break
                 output = task.next()
@@ -104,16 +109,24 @@ class TaskWorker(object):
                 try:
                     while True:
                         if self._task_run == TASK_PAUSE:
-                        	time.sleep(0.1)
-                        	continue
+                            time.sleep(0.1)
+                            continue
                         output = task.send(self._task_run == TASK_START)
+                        if output.type == OutputType.NOTIFY and output.output == 'WAITSUB':
+                        	pass
+
                         if hdlr and output.type <= self._dbg_lvl:
                             hdlr.send(output)   # For Qt App, emit Signal
+                        try:
+                            task = self._todo_sub.get_nowait()
+                            print "has sub task"
+                        except Queue.Empty:
+                            task = None
+                            hdlr = None
                 except StopIteration:
                     pass
-                # Cause RuntimeError: 'generator ignored GeneratorExit'
+                # task.close() will cause RuntimeError: 'generator ignored GeneratorExit'
                 # See http://mail.python.org/pipermail/python-dev/2006-August/068429.html
-                # task.close()
             except Queue.Empty:
                 pass
 
@@ -156,7 +169,7 @@ def CmdTask(*args):
                 raise CommandTerminated()
         errmsg = p.stderr.read()
         if len(errmsg) > 0:
-        	raise Exception(errmsg)
+            raise Exception(errmsg)
         (yield TaskOutput(u'END: %s' % args[0]))
     except CommandTerminated:
         (yield TaskOutput(u'TERMINITED: %s' % args[0], OutputType.WARN))
@@ -199,7 +212,7 @@ def CmdTask2(workdir, *args):
                 raise CommandTerminated()
         errmsg = p.stderr.read()
         if len(errmsg) > 0:
-        	raise Exception(errmsg)
+            raise Exception(errmsg)
         (yield TaskOutput(u'END: %s' % args[0]))
     except CommandTerminated:
         (yield TaskOutput(u'TERMINITED: %s' % args[0], OutputType.WARN))

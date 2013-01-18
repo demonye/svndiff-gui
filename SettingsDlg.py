@@ -103,8 +103,8 @@ class SettingsDlg(QDialog):
             ("txtAppPwd", QLineEdit(), 130),
             ("txtAppStartup", QLineEdit(), 0),
             ("txtAppShutdown", QLineEdit(), 0),
-            ("btnSave", QPushButton(QIcon('image/checkmark2.png'), 'Save'), 0),
-            ("btnCancel", QPushButton('Cancel'), 0),
+            ("btnSave", QPushButton(QIcon('image/checkmark.png'), 'Save'), 0),
+            ("btnCancel", QPushButton(QIcon('image/cancel.png'), 'Cancel'), 0),
         ]
         for w in widgets:
             setattr(self, w[0], w[1])
@@ -234,7 +234,7 @@ class SettingsDlg(QDialog):
         self.notification.setText(msg)
 
     def _addApp(self, app):
-        item = QListWidgetItem(QIcon('image/application.png'), app)
+        item = QListWidgetItem(QIcon('image/item.png'), app)
         item.setFlags(item.flags() | Qt.ItemIsEditable)
         self.lstApp.addItem(item)
         self.lstApp.setCurrentItem(item)
@@ -294,7 +294,7 @@ class SettingsDlg(QDialog):
         self.lstApp.clear()
         for _ in self.conf('app', 'list').split(','):
             v = _.strip()
-            item = QListWidgetItem(QIcon('image/application'), v)
+            item = QListWidgetItem(QIcon('image/item.png'), v)
             item.setFlags(item.flags() | Qt.ItemIsEditable)
             self.lstApp.addItem(item)
         self.lstApp.setCurrentRow(0)
