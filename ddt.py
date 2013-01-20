@@ -89,7 +89,7 @@ class MainWindow(QMainWindow):
         self.lbLoadingText = QLabel()
         self.lbLoadingGif = QLabel()
         self.lbLoadingGif.hide()
-        movie = QMovie("loading8.gif")
+        movie = QMovie("loading.gif")
         movie.start()
         self.lbLoadingGif.setMovie(movie)
 

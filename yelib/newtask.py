@@ -62,7 +62,6 @@ class TaskWorker(object):
 
     def __init__(self, autostart=True, debug_level=OutputType.INFO):
         self._todo = Queue.Queue()
-        self._todo_sub = Queue.Queue()
         self._workthd = Thread(target=self.run)
         self._lock = Lock()
         self._task_run = False
@@ -85,9 +84,6 @@ class TaskWorker(object):
         self._todo.put((task, hdlr, start))
         if start:
             self.start_task()
-
-    def add_sub_task(self, task):
-        self._todo_sub.put(task)
     def start_task(self):
         self._task_run = TASK_START
     def stop_task(self):
@@ -97,10 +93,8 @@ class TaskWorker(object):
 
     def run(self):
         while True:
-            task = None
             try:
                 task, hdlr, self._task_run = self._todo.get() #timeout=0.1)
-
                 if type(task) == str and task == 'quit':
                     break
                 output = task.next()
@@ -112,17 +106,8 @@ class TaskWorker(object):
                             time.sleep(0.1)
                             continue
                         output = task.send(self._task_run == TASK_START)
-                        if output.type == OutputType.NOTIFY and output.output == 'WAITSUB':
-                        	pass
-
                         if hdlr and output.type <= self._dbg_lvl:
                             hdlr.send(output)   # For Qt App, emit Signal
-                        try:
-                            task = self._todo_sub.get_nowait()
-                            print "has sub task"
-                        except Queue.Empty:
-                            task = None
-                            hdlr = None
                 except StopIteration:
                     pass
                 # task.close() will cause RuntimeError: 'generator ignored GeneratorExit'
@@ -135,9 +120,10 @@ class TaskHandler(QObject):
 
     sig = Signal(TaskOutput)
 
-    def __init__(self, func):
+    def __init__(self, *funcs):
         QObject.__init__(self)
-        self.sig.connect(func)
+        for func in funcs:
+            self.sig.connect(func)
 
     def send(self, output):
         self.sig.emit(output)

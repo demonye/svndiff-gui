@@ -1,3 +1,4 @@
+import os
 from PySide.QtCore import *
 from PySide.QtGui import *
 from yelib.qt.layout import *

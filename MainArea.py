@@ -8,6 +8,7 @@ from PySide.QtGui import *
 from paramiko import SSHClient, AutoAddPolicy
 import zipfile
 import shutil
+import time
 
 from yelib.qt.layout import *
 from yelib.qt.widgets import *
@@ -148,6 +149,42 @@ class MainArea(QWidget):
         else:
             self.txtLog.append(log.formatted_html())
 
+    def beginTask(self, msg='', btn=None):
+        def _begin():
+            (yield TaskOutput(u'BEGIN TASK', OutputType.NOTIFY))
+        def _begin_handler(taskmsg):
+            self.appendLog(taskmsg)
+            if btn: btn.setDisabled(True)
+            self.parent().showLoading(msg, True)
+
+        self.worker.add_task(_begin(), TaskHandler(_begin_handler))
+
+    def endTask(self, btn=None):
+        def _end():
+            (yield TaskOutput(u'END TASK', OutputType.NOTIFY))
+        def _end_handler(taskmsg):
+            self.parent().showLoading('', False)
+            if btn: btn.setDisabled(False)
+            self.appendLog(taskmsg)
+
+        self.worker.add_task(_end(), TaskHandler(_end_handler))
+
+    def runTask(self, task, hdlr=None, msg=''):
+        def _run_handler(taskmsg):
+            self.appendLog(taskmsg)
+            if (hdlr and
+                taskmsg.type == OutputType.OUTPUT and
+                taskmsg.output):
+                hdlr(taskmsg.output)
+        self.worker.add_task(task, TaskHandler(_run_handler))
+
+    def echoMsg(self, msg):
+        def _echo_handler(taskmsg):
+            self.appendLog(taskmsg)
+        def _echo():
+            (yield TaskOutput(msg))
+        self.worker.add_task(_echo(), TaskHandler(_echo_handler))
+
     def taskHandler(self, taskmsg, loading=None, btn=None, finalword=None):
         pt = self.parent()
         if taskmsg.type == OutputType.NOTIFY:
@@ -183,42 +220,44 @@ class MainArea(QWidget):
     def getStatus(self):
         srcdir = self.txtSrcRoot.text()
         if srcdir == "":
-            self.appendLog(TaskOutput(u'Please set the path of source code in Setting Tab!', OutputType.WARN))
+            self.appendLog(TaskOutput(u'!!! Please set source root !!!', OutputType.WARN))
             return
-        self.worker.add_task(
+
+        self.beginTask(u'Getting svn status ... ', self.btnGetStatus)
+        self.runTask(
                 CmdTask(os.path.join("bin", "svndiff"), "-c", "-s", srcdir),
-                TaskHandler(self.getStatusHandler)
+                self.getStatusHandler
                 )
+        self.endTask(self.btnGetStatus)
         tb = self.lstFiles
         for i in xrange(tb.rowCount()):
             tb.removeRow(0)
 
-    @Slot(TaskOutput)
     def getStatusHandler(self, msg):
-        ret = self.taskHandler(msg, u'Getting svn status ... ', self.btnGetStatus)
-        if ret is not None:
-            tb = self.lstFiles
-            m = ret.split()
-            if m[0] not in self.statusIcons:
-                self.appendLog(
-                    TaskOutput(u'Not recognized flag: %s' % m[0],
-                        OutputType.ERROR)
-                    )
-                return
-            n = tb.rowCount()
-            tb.insertRow(n)
-            item = QTableWidgetItem()
-            item.setCheckState(Qt.Checked)
-            tb.setItem(n, 0, item)
-            tb.setItem(n, 1, QTableWidgetItem(self.statusIcons[m[0]], m[0]))
-            tb.setItem(n, 2, QTableWidgetItem(m[0]))
-            tb.setItem(n, 3, QTableWidgetItem(m[1]))
-            tb.setItem(n, 4, QTableWidgetItem(m[2]))
+        tb = self.lstFiles
+        m = msg.split()
+        if m[0] not in self.statusIcons:
+            self.appendLog(
+                TaskOutput(u'Not recognized flag: %s' % m[0],
+                    OutputType.ERROR)
+                )
+            return
+        n = tb.rowCount()
+        tb.insertRow(n)
+        item = QTableWidgetItem()
+        item.setCheckState(Qt.Checked)
+        tb.setItem(n, 0, item)
+        tb.setItem(n, 1, QTableWidgetItem(self.statusIcons[m[0]], m[0]))
+        tb.setItem(n, 2, QTableWidgetItem(m[0]))
+        tb.setItem(n, 3, QTableWidgetItem(m[1]))
+        tb.setItem(n, 4, QTableWidgetItem(m[2]))
 
     def makeDiff(self):
         if self.txtBugId.text() == "":
             self.appendLog(TaskOutput(u"!!! Please input Bug Id !!!", OutputType.WARN))
             return
+
+        self.beginTask(u'Making diff files ... ', self.btnMakeDiff)
 
         srcdir = self.txtSrcRoot.text()
         files = []
@@ -234,9 +273,12 @@ class MainArea(QWidget):
                 "-v", os.path.join("bin", "svn"),
                 "-t", os.path.join("html", "diff_template.html"),
                 ] + files
-        self.worker.add_task(
-                CmdTask(*cmds),
-                TaskHandler(self.makeDiffHandler) )
+        self.runTask(CmdTask(*cmds))
+        path = os.path.join(os.getcwdu(), hdiff_dir).replace(os.sep, '/')
+        self.echoMsg(
+                u"Go to <a href='{}' style='color:dodgerblue;'>HDIFF Directory</a> "
+                "to check the result.".format(path)
+                )
 
 
         st = self.settings
@@ -246,7 +288,7 @@ class MainArea(QWidget):
         httpurl = st.conf('diff', 'http url')
         if svnid == "":
             svnid = "yanpeng.wang"
-        self.result_url = "{}/{}/{}".format(httpurl.rstrip('/'), svnid, bugid)
+        result_url = "{}/{}/{}".format(httpurl.rstrip('/'), svnid, bugid)
         rmtdir = os.path.join(rmtdir, svnid, bugid).replace(os.sep, '/')
 
         sshargs = {
@@ -256,13 +298,14 @@ class MainArea(QWidget):
             'timeout' : 10,
             'compress': True,
             }
-        self.worker.add_task(
-                self._uploadDiffs(rmtdir, **sshargs),
-                TaskHandler(self.uploadDiffsHandler)
+        self.runTask(self._uploadDiffs(rmtdir, sshargs))
+        self.echoMsg(
+                u"Click <a href='{0}' style='color:dodgerblue;'>{0}</a> "
+                u"to review the result.".format(result_url),
                 )
+        self.endTask(self.btnMakeDiff)
 
-
-    def _uploadDiffs(self, dstdir, **sshargs):
+    def _uploadDiffs(self, dstdir, sshargs):
         (yield TaskOutput(u'ENTER', OutputType.NOTIFY))
         sshcli = SSHClient()
         sftpcli = None
@@ -298,57 +341,6 @@ class MainArea(QWidget):
             (yield TaskOutput(u'EXIT %d' % code, OutputType.NOTIFY))
 
 
-    @Slot(TaskOutput)
-    def makeDiffHandler(self, msg):
-        if not hasattr(self, 'fwReadyToUpload'):
-            path = os.path.join(os.getcwdu(), hdiff_dir)
-            path = path.replace(os.sep, '/')
-            self.fwReadyToUpload = (
-                u"Go to <a href='{}' style='color:dodgerblue;'>HDIFF Directory</a> "
-                "to check the result.".format(path)
-                )
-        self.taskHandler(msg, u'Making diff files ... ',
-                self.btnMakeDiff, self.fwReadyToUpload)
-
-
-    @Slot(TaskOutput)
-    def uploadDiffsHandler(self, msg):
-        if not hasattr(self, 'fwUpload'):
-            self.fwUpload = (
-                u"Click <a href='{0}' style='color:dodgerblue;'>{0}</a> to review the result.".format(
-                self.result_url)
-                )
-        self.taskHandler(msg, u'Uploading diff files ... ',
-                self.btnMakeDiff, self.fwUpload)
-
-
-    def deployNew(self):
-        st = self.settings
-        app = self.cboApp.itemText(self.cboApp.currentIndex())
-        try:
-            force_rmdir(approot_dir)
-            force_rmdir(clstemp_dir)
-            mkdir_p(approot_dir)
-            mkdir_p(clstemp_dir)
-        except Exception as ex:
-            self.appendLog(TaskOutput(ex.message, OutputType.ERROR))
-            return
-
-        hostname = st.conf(app, 'server')
-        sshargs = {}
-        if hostname not in ('localhost', '127.0.0.1'):
-            sshargs = {
-                'hostname': hostname,
-                'username': st.conf(app, 'username'),
-                'password': decrypt(st.conf(app, 'password')),
-                'timeout' : 10,
-                'compress': True,
-                }
-        self.worker.add_task(
-                self._deployNew(sshargs),
-                TaskHandler(self.deployNewHandler)
-                )
-
     def _copyfile(self, ssh, sftp, from_file, to_file, method='get', overwrite=True):
         if os.path.isdir(to_file):
             fname = os.path.basename(from_file)
@@ -367,7 +359,10 @@ class MainArea(QWidget):
             else:
                 sftp.get(from_file, to_file)
         else:
-            shutil.copy(from_file, to_file)
+            try:
+                shutil.copy(from_file, to_file)
+            except Exception as ex:
+                raise ex
 
     def _copyfiles(self, ssh, sftp, wildcard, to_dir, method='get', overwrite=True):
         if sftp:
@@ -386,7 +381,7 @@ class MainArea(QWidget):
         for fn in files:
             self._copyfile(ssh, sftp, fn, to_dir, method, overwrite)
 
-#
+
 # data/backup/appname/
 #    |_ other files 
 #    |_ WEB-INF/classes/com/.../*.class
@@ -397,16 +392,38 @@ class MainArea(QWidget):
 #    \_ WEB-INF/lib/*.jar
 # data/clstemp  ----------- new classes to be put in jar
 #    \_ com/.../*.class
-#
-    def _deployNew(self, sshargs):
-        (yield TaskOutput(u'ENTER', OutputType.NOTIFY))
+    def deployNew(self):
         st = self.settings
         app = self.cboApp.itemText(self.cboApp.currentIndex())
+        try:
+            force_rmdir(approot_dir)
+            force_rmdir(clstemp_dir)
+            mkdir_p(approot_dir)
+            mkdir_p(clstemp_dir)
+        except Exception as ex:
+            self.appendLog(TaskOutput(ex.message, OutputType.ERROR))
+            return
+
+        self.beginTask(u'Deploying Target File ... ', self.btnDeployNew)
+        hostname = st.conf(app, 'server')
+        sshargs = {}
+        if hostname not in ('localhost', '127.0.0.1'):
+            sshargs = {
+                'hostname': hostname,
+                'username': st.conf(app, 'username'),
+                'password': decrypt(st.conf(app, 'password')),
+                'timeout' : 10,
+                'compress': True,
+                }
+
+        self.runTask(self._deployNew(st, app, sshargs))
+
+    # Fetch and backup files
+    def _deployNew(self, st, app, sshargs):
         sshcli = SSHClient()
         sftpcli = None
         tb = self.lstFiles
         code = 0
-
         try:
             if sshargs:
                 if not (yield TaskOutput(u'Conntecting to %s ...' % sshargs['hostname'])):
@@ -424,14 +441,14 @@ class MainArea(QWidget):
 
             # === Fetch and backup files ====
             # backup class files, and copy them to approot dir
-            if not (yield TaskOutput(u'Making backup ...')):
+            if not (yield TaskOutput(u'Fetching, making backup and copying files ... ')):
                 raise CommandTerminated()
             srcroot = st.conf(app, 'source root')
             webappdir = st.conf(app, 'webapp dir')
             javadir = st.conf(app, 'java dir')
             clsdir = st.conf(app, 'class dir')
             tgroot = st.conf(app, 'target root')
-            tgsep = tgroot[0]
+            tgsep = '/'
             tgclsdir = st.conf(app, 'target class dir')
             appbakdir = os.path.join(backup_dir, app)
             for fn in items:
@@ -464,6 +481,7 @@ class MainArea(QWidget):
             jardir = os.path.dirname(tgjarfile)
             bakjardir = os.path.join(appbakdir, jardir)
             newjardir = os.path.join(approot_dir, jardir)
+
             self._copyfiles(sshcli, sftpcli,
                     os.path.join(tgroot, tgjarfile).replace(os.sep, tgsep),
                     bakjardir, overwrite=False)
@@ -471,6 +489,9 @@ class MainArea(QWidget):
                     os.path.join(appbakdir, tgjarfile),
                     newjardir)
 
+            if not (yield TaskOutput(u'Copying new class files ... ')):
+                raise CommandTerminated()
+            jaritems = {}
             # copy new class files to temp dir, for updating jar file above
             for jar in os.listdir(newjardir):
                 zf = zipfile.ZipFile(os.path.join(newjardir, jar))
@@ -482,119 +503,33 @@ class MainArea(QWidget):
                         tmp_f = os.path.join(clstemp_dir, fn)
                         self._copyfile(None, None, new_f, tmp_f)
                         jaritems[jar].append(fn)    # clsss in which jarfile
-            # copy new class files to temp dir, for updating jar file above
-            # ==== Fetch and backup files ====
+                        (yield TaskOutput((jar, fn), OutputType.OUTPUT))
 
-            # ==== Copy into approot_dir and update ====
-            if not (yield TaskOutput(u'Copying new files and updating ...')):
+            if not (yield TaskOutput(u'Updating target files ... ')):
                 raise CommandTerminated()
-            for jar, files  in jaritems.items():
+            for jar, files in jaritems.items():
+                if len(files) == 0:
+                    continue
                 args = [ os.path.join(self.jar_bin), "-uf",
                         os.path.join("..", "..", newjardir, jar)
-                       ]
-                args += files
-                self.worker.add_sub_task(CmdTask2(clstemp_dir, *args))
-            # ==== Copy into approot_dir and update ====
+                       ] + files
+                self.runTask(CmdTask2(clstemp_dir, *args))
 
-            # ==== Replace or upload  files ====
-            #if not (yield TaskOutput(u'Deploying new files to target ...')):
-            #    raise CommandTerminated()
-            # ==== Replace or upload  files ====
-            (yield TaskOutpu('WAITSUB', OutputType.NOTIFY))
+            if not (yield TaskOutput(u'Uploading target  files ... ')):
+                raise CommandTerminated()
+
+            (yield TaskOutput(u'Deployed new target files ... '))
         except CommandTerminated:
             code = -2
-            (yield TaskOutput(u'Uploading Terminited', OutputType.WARN))
+            (yield TaskOutput(u'Deploying Terminited', OutputType.WARN))
         except Exception as ex:
             code = -1
-            (yield TaskOutput(ex.message, OutputType.ERROR))
+            (yield TaskOutput(repr(ex), OutputType.ERROR))
         finally:
             if sftpcli: sftpcli.close()
             if sshcli: sshcli.close()
             (yield TaskOutput(u'EXIT %d' % code, OutputType.NOTIFY))
-
-
-    def _uploadTargetLocal(self, st, app):
-        self.worker.add_task(
-            CmdTask(*(st.conf(app, 'shutdown').split())),
-            TaskHandler(self.uploadTargetHandler)
-            )
-        self.worker.add_task(
-            self._copyToLocalTarget(st, app),
-            TaskHandler(self.uploadTargetHandler)
-            )
-        self.worker.add_task(
-            CmdTask(*(st.conf(app, 'startup').split())),
-            TaskHandler(self.uploadTargetHandler)
-            )
-
-
-    def _uploadTarget(self, shutdown, startup, **sshargs):
-        (yield TaskOutput(u'ENTER', OutputType.NOTIFY))
-        sshcli = SSHClient()
-        sftpcli = None
-        code = 0
-        try:
-            if self.targetFile is None:
-                raise Exception(u'None Target File')
-
-            if not (yield TaskOutput(u'Conntecting to %s ...' % sshargs['hostname'])):
-                raise CommandTerminated()
-            sshcli.set_missing_host_key_policy(AutoAddPolicy())
-            sshcli.connect(**sshargs)
-            if not (yield TaskOutput(u'Connected, fetchting file ...')):
-                raise CommandTerminated()
-
-            sftpcli = sshcli.open_sftp()
-
-            if shutdown:
-                if not (yield TaskOutput(u'Stopping service ...' % fn)):
-                    raise CommandTerminated()
-                ret = sshcli.exec_command(shutdown)
-                errstr = ret[2].read()
-                if errstr != '':
-                    raise Exception(errstr)
-
-            if not (yield TaskOutput(u'Uploading target file ...' % fn)):
-                raise CommandTerminated()
-            sftpcli.put(target_file, self.targetFile)
-
-            if startup:
-                if not (yield TaskOutput(u'Starting service ...' % fn)):
-                    raise CommandTerminated()
-                ret = sshcli.exec_command(startup)
-                errstr = ret[2].read()
-                if errstr != '':
-                    raise Exception(errstr)
-        except CommandTerminated:
-            code = -2
-            (yield TaskOutput(u'TERMINITED: Target file not uploaded ... ', OutputType.WARN))
-        except Exception as ex:
-            code = -1
-            (yield TaskOutput(ex.message, OutputType.ERROR))
-        finally:
-            if sftpcli: sftpcli.close()
-            sshcli.close()
-            (yield TaskOutput(u'EXIT %d' % code, OutputType.NOTIFY))
-
-    def deployNewHandler(self, msg):
-        if not hasattr(self, 'fwDevplyNew'):
-            self.fwDeployNew = u"Deployed New Files ..."
-        self.taskHandler(msg, u'Deploying Target File ... ',
-                self.btnDeployNew, self.fwDeployNew)
-
-    def uploadTargetHandler(self):
-        if not hasattr(self, 'fwUploadTarget'):
-            self.fwUploadTarget = u"Uploaded target file."
-        self.taskHandler(msg, u'Uploading target file ... ',
-                self.btnDeployNew, self.fwUploadTarget)
-
-
-    @Slot(TaskOutput)
-    def updateTargetHandler(self, msg):
-        if not hasattr(self, 'fwUpdateTarget'):
-            self.fwUpdateTarget = u"Updated target file."
-        self.taskHandler(msg, u'Updating target file ... ',
-                self.btnDeployNew, self.fwUpdateTarget)
+            self.endTask(self.btnDeployNew)
 
 
     def closeEvent(self, event):
