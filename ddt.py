@@ -7,8 +7,8 @@ from PySide.QtGui import *
 from paramiko import SSHClient, AutoAddPolicy
 
 from yelib.qt.layout import *
-from yelib.newtask import *
-from tabs.BaseTab import BaseTab, IconLabel
+from yelib.task import *
+#from tabs.BaseTab import BaseTab, IconLabel
 
 from SettingsDlg import SettingsDlg
 from MainArea import MainArea
@@ -89,7 +89,7 @@ class MainWindow(QMainWindow):
         self.lbLoadingText = QLabel()
         self.lbLoadingGif = QLabel()
         self.lbLoadingGif.hide()
-        movie = QMovie("loading.gif")
+        movie = QMovie("image/loading.gif")
         movie.start()
         self.lbLoadingGif.setMovie(movie)
 
@@ -101,11 +101,11 @@ class MainWindow(QMainWindow):
         self.myTb = self.addToolBar("Svn Tool")
         self.myTb.addAction( QAction(
             QIcon('image/computer.png'), "Open Settings Dialog", self,
-            statusTip="Open Settings Dialog",
+            #statusTip="Open Settings Dialog",
             triggered=self.openSettingsTab) )
         self.myTb.addAction( QAction(
             QIcon('image/stop.png'), "Stop Current Running Task", self,
-            statusTip="Stop Current Running Task",
+            #statusTip="Stop Current Running Task",
             triggered=self.stopCurrentTask) )
 
     def stopCurrentTask(self):

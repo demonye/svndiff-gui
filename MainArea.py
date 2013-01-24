@@ -12,7 +12,7 @@ import time
 
 from yelib.qt.layout import *
 from yelib.qt.widgets import *
-from yelib.newtask import *
+from yelib.task import *
 from yelib.util import *
 
 from SettingsDlg import decrypt
@@ -149,41 +149,8 @@ class MainArea(QWidget):
         else:
             self.txtLog.append(log.formatted_html())
 
-    def beginTask(self, msg='', btn=None):
-        def _begin():
-            (yield TaskOutput(u'BEGIN TASK', OutputType.NOTIFY))
-        def _begin_handler(taskmsg):
-            self.appendLog(taskmsg)
-            if btn: btn.setDisabled(True)
-            self.parent().showLoading(msg, True)
-
-        self.worker.add_task(_begin(), TaskHandler(_begin_handler))
-
-    def endTask(self, btn=None):
-        def _end():
-            (yield TaskOutput(u'END TASK', OutputType.NOTIFY))
-        def _end_handler(taskmsg):
-            self.parent().showLoading('', False)
-            if btn: btn.setDisabled(False)
-            self.appendLog(taskmsg)
-
-        self.worker.add_task(_end(), TaskHandler(_end_handler))
-
-    def runTask(self, task, hdlr=None, msg=''):
-        def _run_handler(taskmsg):
-            self.appendLog(taskmsg)
-            if (hdlr and
-                taskmsg.type == OutputType.OUTPUT and
-                taskmsg.output):
-                hdlr(taskmsg.output)
-        self.worker.add_task(task, TaskHandler(_run_handler))
-
     def echoMsg(self, msg):
-        def _echo_handler(taskmsg):
-            self.appendLog(taskmsg)
-        def _echo():
-            (yield TaskOutput(msg))
-        self.worker.add_task(_echo(), TaskHandler(_echo_handler))
+        (yield TaskOutput(msg))
 
     def taskHandler(self, taskmsg, loading=None, btn=None, finalword=None):
         pt = self.parent()
@@ -218,24 +185,33 @@ class MainArea(QWidget):
             self.selectApp(0)
 
     def getStatus(self):
+        def begin():
+            self.btnGetStatus.setDisabled(True)
+            self.parent().showLoading(u'Getting svn status ... ', True)
+            tb = self.lstFiles
+            for i in xrange(tb.rowCount()):
+                tb.removeRow(0)
+        def end():
+            self.parent().showLoading('', False)
+            self.btnGetStatus.setDisabled(False)
+
         srcdir = self.txtSrcRoot.text()
         if srcdir == "":
             self.appendLog(TaskOutput(u'!!! Please set source root !!!', OutputType.WARN))
             return
-
-        self.beginTask(u'Getting svn status ... ', self.btnGetStatus)
-        self.runTask(
-                CmdTask(os.path.join("bin", "svndiff"), "-c", "-s", srcdir),
-                self.getStatusHandler
+        task = Task(CmdTask([os.path.join("bin", "svndiff"), "-c", "-s", srcdir]))
+        task.init(
+                TaskHandler(begin), TaskHandler(end),
+                TaskHandler(self.getStatusHandler),
+                TaskHandler(self.appendLog)
                 )
-        self.endTask(self.btnGetStatus)
-        tb = self.lstFiles
-        for i in xrange(tb.rowCount()):
-            tb.removeRow(0)
+        self.worker.add_task(task)
 
     def getStatusHandler(self, msg):
+        if msg.type != OutputType.OUTPUT:
+        	return
         tb = self.lstFiles
-        m = msg.split()
+        m = msg.output.split()
         if m[0] not in self.statusIcons:
             self.appendLog(
                 TaskOutput(u'Not recognized flag: %s' % m[0],
@@ -253,11 +229,21 @@ class MainArea(QWidget):
         tb.setItem(n, 4, QTableWidgetItem(m[2]))
 
     def makeDiff(self):
+        def begin():
+            self.btnMakeDiff.setDisabled(True)
+            self.parent().showLoading(u'Making diff files ... ', True)
+        def end():
+            self.parent().showLoading('', False)
+            self.btnMakeDiff.setDisabled(False)
+        def handler(msg):
+            if msg.type == OutputType.NOTIFY and msg.output.startswith('EXIT '):
+                code = int(msg.output.split()[1])
+                if code != 0:
+                	self.worker.stop_task()
+
         if self.txtBugId.text() == "":
             self.appendLog(TaskOutput(u"!!! Please input Bug Id !!!", OutputType.WARN))
             return
-
-        self.beginTask(u'Making diff files ... ', self.btnMakeDiff)
 
         srcdir = self.txtSrcRoot.text()
         files = []
@@ -273,13 +259,19 @@ class MainArea(QWidget):
                 "-v", os.path.join("bin", "svn"),
                 "-t", os.path.join("html", "diff_template.html"),
                 ] + files
-        self.runTask(CmdTask(*cmds))
-        path = os.path.join(os.getcwdu(), hdiff_dir).replace(os.sep, '/')
-        self.echoMsg(
-                u"Go to <a href='{}' style='color:dodgerblue;'>HDIFF Directory</a> "
-                "to check the result.".format(path)
+
+        task = Task(CmdTask(cmds))
+        task.init(
+                TaskHandler(begin), TaskHandler(end),
+                TaskHandler(handler),
+                TaskHandler(self.appendLog)
                 )
 
+        path = os.path.join(os.getcwdu(), hdiff_dir).replace(os.sep, '/')
+        task.put(self.echoMsg(
+                u"Go to <a href='{}' style='color:dodgerblue;'>HDIFF Directory</a> "
+                "to check the result.".format(path)
+                ))
 
         st = self.settings
         bugid = self.txtBugId.text()
@@ -294,19 +286,20 @@ class MainArea(QWidget):
         sshargs = {
             'hostname': st.conf('diff', 'server'),
             'username': st.conf('diff', 'username'),
-            'password': st.conf('diff', 'password'),
+            'password': decrypt(st.conf('diff', 'password')),
             'timeout' : 10,
             'compress': True,
             }
-        self.runTask(self._uploadDiffs(rmtdir, sshargs))
-        self.echoMsg(
+
+        task.put(self._uploadDiffs(rmtdir, sshargs))
+        task.put(self.echoMsg(
                 u"Click <a href='{0}' style='color:dodgerblue;'>{0}</a> "
                 u"to review the result.".format(result_url),
-                )
-        self.endTask(self.btnMakeDiff)
+                ))
+
+        self.worker.add_task(task)
 
     def _uploadDiffs(self, dstdir, sshargs):
-        (yield TaskOutput(u'ENTER', OutputType.NOTIFY))
         sshcli = SSHClient()
         sftpcli = None
         code = 0
@@ -513,7 +506,7 @@ class MainArea(QWidget):
                 args = [ os.path.join(self.jar_bin), "-uf",
                         os.path.join("..", "..", newjardir, jar)
                        ] + files
-                self.runTask(CmdTask2(clstemp_dir, *args))
+                self.runTask(CmdTask(args, clstemp_dir))
 
             if not (yield TaskOutput(u'Uploading target  files ... ')):
                 raise CommandTerminated()

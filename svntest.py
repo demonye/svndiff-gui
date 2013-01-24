@@ -5,7 +5,7 @@ import sys, os
 from PySide.QtCore import *
 from PySide.QtGui import *
 
-from yelib.newtask import *
+from yelib.task import *
 import locale
 
 class MainWindow(QDialog):
@@ -41,11 +41,11 @@ class MainWindow(QDialog):
         self.setWindowTitle('Excute Command')
         # ==== Main Layout ====
 
-        self.worker = Worker()
+        self.worker = TaskWorker()
         self.btnStart.clicked.connect(self.startTask1)
-        self.btnResume.clicked.connect(self.worker.resume_task)
-        self.btnPause.clicked.connect(self.worker.pause_task)
-        self.btnStop.clicked.connect(self.worker.stop_task)
+        self.btnResume.clicked.connect(self.resumeTask1)
+        self.btnPause.clicked.connect(self.pauseTask1)
+        self.btnStop.clicked.connect(self.stopTask1)
 
         self.txt.setOpenExternalLinks(True)
         self.txt.anchorClicked.connect(self.open_link)
@@ -80,7 +80,6 @@ class MainWindow(QDialog):
         #for t in html:
         #	self.txt.append(t)
 
-        self.task1_hdlr = TaskHandler(self.Task1Handler)
         self.coding = locale.getdefaultlocale()[1]
 
 
@@ -98,22 +97,46 @@ class MainWindow(QDialog):
         event.accept()
 
     def startTask1(self):
-        #self.worker.add_task(self.Task1(), self.task1_hdlr)
-        self.worker.add_task(CmdTask("dir1", "D:\\"), self.task1_hdlr)
-
-    def Task1(self):
-        print "start Task1"
-        try:
-            for i in xrange(10):
-                (yield TaskOutput(u"message %d" % i))
-                time.sleep(1)
-        except GeneratorExit:
-            print "terminate Task1"
-        finally:
+        def begin():
+            print "start Task1"
+            self.btnStart.setDisabled(True)
+        def end():
+            self.btnStart.setDisabled(False)
             print "end Task1"
 
+        task = Task(self.Task1())
+        #task = Task(CmdTask("dir", "D:\\"))
+        task.init(
+                TaskHandler(begin),
+                TaskHandler(end),
+                TaskHandler(self.Task1Handler)
+                )
+        self.worker.add_task(task)
+
+    def pauseTask1(self):
+        self.worker.pause_task()
+    def resumeTask1(self):
+        self.worker.resume_task()
+    def stopTask1(self):
+        self.worker.stop_task()
+
+    def Task1(self):
+        (yield TaskOutput("ENTER", OutputType.NOTIFY))
+        try:
+            for i in xrange(5):
+                if not (yield TaskOutput(u"message %d" % i)):
+                	raise Exception('stopped')
+                time.sleep(1)
+            self.worker.add_step(CmdTask(["dir", "D:\\"]))
+        except GeneratorExit:
+            print "terminate Task1"
+        except Exception as ex:
+            (yield TaskOutput(ex.message, OutputType.ERROR))
+        finally:
+            (yield TaskOutput("EXIT 0", OutputType.NOTIFY))
+
     def Task1Handler(self, msg):
-        self.txt.append(msg.output.decode(self.coding))
+        self.txt.append(unicode(msg))
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
