@@ -104,7 +104,8 @@ class SettingsDlg(QDialog):
             ("txtAppStartup", QLineEdit(), 0),
             ("txtAppShutdown", QLineEdit(), 0),
             ("btnSave", QPushButton(QIcon('image/checkmark.png'), 'Save'), 0),
-            ("btnCancel", QPushButton(QIcon('image/cancel.png'), 'Cancel'), 0),
+            #("btnCancel", QPushButton(QIcon('image/cancel.png'), 'Cancel'), 0),
+            ("btnCancel", QPushButton('Cancel'), 0),
         ]
         for w in widgets:
             setattr(self, w[0], w[1])

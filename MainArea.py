@@ -184,6 +184,13 @@ class MainArea(QWidget):
         if self.cboApp.count() > 0:
             self.selectApp(0)
 
+    def defaultHandler(self, msg):
+        if msg.type == OutputType.NOTIFY and msg.output.startswith('EXIT '):
+            code = int(msg.output.split()[1])
+            if code != 0:
+                self.worker.stop_task()
+        self.appendLog(msg)
+
     def getStatus(self):
         def begin():
             self.btnGetStatus.setDisabled(True)
@@ -203,7 +210,7 @@ class MainArea(QWidget):
         task.init(
                 TaskHandler(begin), TaskHandler(end),
                 TaskHandler(self.getStatusHandler),
-                TaskHandler(self.appendLog)
+                TaskHandler(self.defaultHandler)
                 )
         self.worker.add_task(task)
 
@@ -235,12 +242,6 @@ class MainArea(QWidget):
         def end():
             self.parent().showLoading('', False)
             self.btnMakeDiff.setDisabled(False)
-        def handler(msg):
-            if msg.type == OutputType.NOTIFY and msg.output.startswith('EXIT '):
-                code = int(msg.output.split()[1])
-                if code != 0:
-                	self.worker.stop_task()
-
         if self.txtBugId.text() == "":
             self.appendLog(TaskOutput(u"!!! Please input Bug Id !!!", OutputType.WARN))
             return
@@ -263,8 +264,7 @@ class MainArea(QWidget):
         task = Task(CmdTask(cmds))
         task.init(
                 TaskHandler(begin), TaskHandler(end),
-                TaskHandler(handler),
-                TaskHandler(self.appendLog)
+                TaskHandler(self.defaultHandler)
                 )
 
         path = os.path.join(os.getcwdu(), hdiff_dir).replace(os.sep, '/')
@@ -358,8 +358,8 @@ class MainArea(QWidget):
                 raise ex
 
     def _copyfiles(self, ssh, sftp, wildcard, to_dir, method='get', overwrite=True):
+        files = []
         if sftp:
-            files = []
             dn = os.path.dirname(wildcard)
             bn = os.path.basename(wildcard)
             _, stdout, stderr = ssh.exec_command(
@@ -371,8 +371,10 @@ class MainArea(QWidget):
         else:
             files = glob.glob(wildcard)
         mkdir_p(to_dir)
-        for fn in files:
-            self._copyfile(ssh, sftp, fn, to_dir, method, overwrite)
+        #for fn in files:
+        #    self._copyfile(ssh, sftp, fn, to_dir, method, overwrite)
+        if len(files) == 1:
+            self._copyfile(ssh, sftp, files[0], to_dir, method, overwrite)
 
 
 # data/backup/appname/
@@ -388,16 +390,9 @@ class MainArea(QWidget):
     def deployNew(self):
         st = self.settings
         app = self.cboApp.itemText(self.cboApp.currentIndex())
-        try:
-            force_rmdir(approot_dir)
-            force_rmdir(clstemp_dir)
-            mkdir_p(approot_dir)
-            mkdir_p(clstemp_dir)
-        except Exception as ex:
-            self.appendLog(TaskOutput(ex.message, OutputType.ERROR))
-            return
+        sshcli = SSHClient()
+        sftpcli = None
 
-        self.beginTask(u'Deploying Target File ... ', self.btnDeployNew)
         hostname = st.conf(app, 'server')
         sshargs = {}
         if hostname not in ('localhost', '127.0.0.1'):
@@ -409,41 +404,70 @@ class MainArea(QWidget):
                 'compress': True,
                 }
 
-        self.runTask(self._deployNew(st, app, sshargs))
+        def begin():
+            self.btnDeployNew.setDisabled(True)
+            self.parent().showLoading(u'Deploying Target File ... ', True)
+            if sshargs:
+                try:
+                    self.appendLog(TaskOutput(u'Conntecting to %s ...' % sshargs['hostname']))
+                    sshcli.set_missing_host_key_policy(AutoAddPolicy())
+                    sshcli.connect(**sshargs)
+                    self.appendLog(TaskOutput(u'Connected'))
+                    sftpcli = sshcli.open_sftp()
+                except Exception as ex:
+                    self.appendLog(repr(ex), OutputType.ERROR)
+        def end():
+            if sftpcli: sftpcli.close()
+            if sshcli: sshcli.close()
+            self.parent().showLoading('', False)
+            self.btnDeployNew.setDisabled(False)
+
+        try:
+            force_rmdir(approot_dir)
+            force_rmdir(clstemp_dir)
+            mkdir_p(approot_dir)
+            mkdir_p(clstemp_dir)
+        except Exception as ex:
+            self.appendLog(TaskOutput(ex.message, OutputType.ERROR))
+            return
+
+        task = Task(self._deployNew(st, app, sshcli, sftpcli))
+        task.init(
+                TaskHandler(begin), TaskHandler(end),
+                TaskHandler(self.defaultHandler),
+                )
+        self.worker.add_task(task)
+
+#    def deployNewHandler(self, msg):
+#        if msg.type == OutputType.NOTIFY and msg.output.startswith('EXIT '):
+#            code = int(msg.output.split()[1])
+#            if code == 0:
+#                self.worker.
+
 
     # Fetch and backup files
-    def _deployNew(self, st, app, sshargs):
-        sshcli = SSHClient()
-        sftpcli = None
+    def _deployNew(self, st, app, sshcli, sftpcli):
         tb = self.lstFiles
         code = 0
-        try:
-            if sshargs:
-                if not (yield TaskOutput(u'Conntecting to %s ...' % sshargs['hostname'])):
-                    raise CommandTerminated()
-                sshcli.set_missing_host_key_policy(AutoAddPolicy())
-                sshcli.connect(**sshargs)
-                if not (yield TaskOutput(u'Connected!')):
-                    raise CommandTerminated()
-                sftpcli = sshcli.open_sftp()
+        srcroot = st.conf(app, 'source root')
+        webappdir = st.conf(app, 'webapp dir')
+        javadir = st.conf(app, 'java dir')
+        clsdir = st.conf(app, 'class dir')
+        tgroot = st.conf(app, 'target root')
+        tgsep = '/'
+        tgclsdir = st.conf(app, 'target class dir')
+        appbakdir = os.path.join(backup_dir, app)
+        clsitems = []  # items found in class dir or non-java-file
+        jaritems = {}   # items found in jar file
 
+        try:
             items = [ tb.item(i,3).text() for i in xrange(tb.rowCount())
                     if tb.item(i,0).checkState() == Qt.Checked ]
-            clsitems = []  # items found in class dir or non-java-file
-            jaritems = {}   # items found in jar file
 
             # === Fetch and backup files ====
             # backup class files, and copy them to approot dir
             if not (yield TaskOutput(u'Fetching, making backup and copying files ... ')):
                 raise CommandTerminated()
-            srcroot = st.conf(app, 'source root')
-            webappdir = st.conf(app, 'webapp dir')
-            javadir = st.conf(app, 'java dir')
-            clsdir = st.conf(app, 'class dir')
-            tgroot = st.conf(app, 'target root')
-            tgsep = '/'
-            tgclsdir = st.conf(app, 'target class dir')
-            appbakdir = os.path.join(backup_dir, app)
             for fn in items:
                 if fn.endswith('.java'):
                     fn = fn.replace(javadir.replace(os.sep, '/'), '').lstrip('/')
@@ -466,15 +490,35 @@ class MainArea(QWidget):
                 except IOError as ex:   # No file found
                     if ex.args[0] != 2:
                         raise ex
+                if not (yield TaskOutput(u'Copying files ... ')):
+                    raise CommandTerminated()
+            self.worker.add_step(self._updateNew(st, app, sshcli, sftpcli, clsitems))
+        except CommandTerminated:
+            code = -2
+            (yield TaskOutput(u'Fetching Terminited', OutputType.WARN))
+        except Exception as ex:
+            code = -1
+            (yield TaskOutput(repr(ex), OutputType.ERROR))
+        finally:
+            (yield TaskOutput(u'EXIT %d' % code, OutputType.NOTIFY))
 
-            # 1. backup jar files
-            # 2. copy them to approot dir 
-            # 3. will be updated with clstemp fileslater
-            tgjarfile = st.conf(app, 'target jar file')
-            jardir = os.path.dirname(tgjarfile)
-            bakjardir = os.path.join(appbakdir, jardir)
-            newjardir = os.path.join(approot_dir, jardir)
+    def _updateNew(self, st, app, sshcli, sftpcli, clsitems):
+        # 1. backup jar files
+        # 2. copy them to approot dir 
+        # 3. will be updated with clstemp fileslater
+        code = 0
+        srcroot = st.conf(app, 'source root')
+        clsdir = st.conf(app, 'class dir')
+        tgroot = st.conf(app, 'target root')
+        appbakdir = os.path.join(backup_dir, app)
+        tgjarfile = st.conf(app, 'target jar file')
+        jardir = os.path.dirname(tgjarfile)
+        bakjardir = os.path.join(appbakdir, jardir)
+        newjardir = os.path.join(approot_dir, jardir)
+        tgsep = '/'
+        jaritems = {}
 
+        try:
             self._copyfiles(sshcli, sftpcli,
                     os.path.join(tgroot, tgjarfile).replace(os.sep, tgsep),
                     bakjardir, overwrite=False)
@@ -484,7 +528,6 @@ class MainArea(QWidget):
 
             if not (yield TaskOutput(u'Copying new class files ... ')):
                 raise CommandTerminated()
-            jaritems = {}
             # copy new class files to temp dir, for updating jar file above
             for jar in os.listdir(newjardir):
                 zf = zipfile.ZipFile(os.path.join(newjardir, jar))
@@ -506,23 +549,40 @@ class MainArea(QWidget):
                 args = [ os.path.join(self.jar_bin), "-uf",
                         os.path.join("..", "..", newjardir, jar)
                        ] + files
-                self.runTask(CmdTask(args, clstemp_dir))
-
-            if not (yield TaskOutput(u'Uploading target  files ... ')):
-                raise CommandTerminated()
-
-            (yield TaskOutput(u'Deployed new target files ... '))
+                self.worker.add_step(CmdTask(args, clstemp_dir))
+            self.worker.add_step(self._uploadNew(st, app, sshcli, sftpcli))
         except CommandTerminated:
             code = -2
-            (yield TaskOutput(u'Deploying Terminited', OutputType.WARN))
+            (yield TaskOutput(u'Updating Terminited', OutputType.WARN))
         except Exception as ex:
             code = -1
             (yield TaskOutput(repr(ex), OutputType.ERROR))
         finally:
-            if sftpcli: sftpcli.close()
-            if sshcli: sshcli.close()
             (yield TaskOutput(u'EXIT %d' % code, OutputType.NOTIFY))
-            self.endTask(self.btnDeployNew)
+
+
+    def _uploadNew(self, st, app, sshcli, sftpcli):
+        tgroot = st.conf(app, 'target root')
+        tgsep = '/'
+        code = 0
+        try:
+            for r,_,files in os.walk(approot_dir):
+                for f in files:
+                    srcfile = os.path.join(r, f)
+                    tgfile = os.path.join(tgroot, r.replace(approot_dir+os.sep, ''),
+                            f).replace(os.sep, tgsep)
+                    if not (yield TaskOutput(u'Uploading %s ... ' % srcfile)):
+                        raise CommandTerminated()
+                    self._copyfile(sshcli, sftpcli, srcfile, tgfile, method='put')
+            (yield TaskOutput(u'Files Uploaded'))
+        except CommandTerminated:
+            code = -2
+            (yield TaskOutput(u'Uploading Terminited', OutputType.WARN))
+        except Exception as ex:
+            code = -1
+            (yield TaskOutput(repr(ex), OutputType.ERROR))
+        finally:
+            (yield TaskOutput(u'EXIT %d' % code, OutputType.NOTIFY))
 
 
     def closeEvent(self, event):

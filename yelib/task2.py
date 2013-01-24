@@ -10,7 +10,7 @@ from subprocess import *
 from yelib.util import enum
 from PySide.QtCore import QObject, Signal, Slot
 import locale
-from yelib.util import singleton
+#from yelib.util import singleton
 
 OutputType = enum(
     'NOTIFY', 'OUTPUT', 'ERROR', 'WARN', 'INFO',
@@ -57,67 +57,61 @@ class TaskOutput(object):
                 )
 
 
-class Task(object):
-
-    _id = 0
+class Task(list):
 
     def __init__(self, *steps):
-        Task._id += 1
-        self.id = Task._id
-        self.steps = []
+        super(Task, self).__init__()
         self._lock = Lock()
         self._begin = None
         self._end = None
-        self._handlers = None
-        self._resume = True
+        self._hdlr = None
         self._continue = True
         with self._lock:
-            for step in steps: self.steps.append(step)
+            for step in steps: self.append(step)
 
-    def init(self, begin, end, *hdlrs):
+    def init(self, begin, end, hdlr):
         self._begin = begin
         self._end = end
-        self._handlers = hdlrs
+        self._hdlr = hdlr
 
     def put(self, step):
         with self._lock:
-            self.steps.append(step)
+            self.append(step)
 
     def put0(self, step):
         with self._lock:
-            self.steps.insert(0, step)
+            self.insert(0, step)
 
     def get(self):
         with self._lock:
-            step = self.steps.pop(0)
+            step = self.pop(0)
         return step
 
     def resume(self):
-        self._resume = True
+        self._continue = True
 
     def _pause(self):
-        time.sleep(0.1)
-        if (not self._resume) and self._continue:
+        time.sleep(1)
+        if not self._continue:
             self.put0(self._pause)
     def pause(self):
-        self._resume = False
+        self._continue = False
         self.put0(self._pause)
 
     def _stop(self):
         with self._lock:
-            while True: self.steps.pop(0)
+            while True: self.pop(0)
     def stop(self):
-        "=== task stop ==="
         self._continue = False
         self.put0(self._stop)
 
     def emit(self, output):
-        if self._handlers:
-            for hdlr in self._handlers:
-                hdlr.send(output)
+        if self._hdlr:
+            self._hdlr.send(output)
+            #self._hdlr(output)
 
 
-@singleton
+#@singleton
 class TaskWorker(object):
 
     def __init__(self, autostart=True, debug_level=OutputType.INFO):
@@ -133,34 +127,24 @@ class TaskWorker(object):
 
     def stop(self):
         self.add_task('quit')
-        self.stop_task()
-        self._workthd.join()
-
-    def pause_task(self):
         if self._currtask:
-            self._currtask.pause()
-    def resume_task(self):
-        if self._currtask:
-            self._currtask.resume()
-    def stop_task(self):
-        if self._currtask and isinstance(self._currtask, Task):
             self._currtask.stop()
+        self._workthd.join()
 
     def add_task(self, task):
         self._todo.put(task)
 
-    def add_step(self, step):
-        if self._currtask and isinstance(self._currtask, Task):
-            self._currtask.put(step)
+    def currtask(self):
+        return self._currtask
 
     def run(self):
         while True:
             try:
-                self._currtask = self._todo.get(0.1)
-                task = self._currtask
+                task = self._todo.get(0.1)
                 if type(task) == str and task == 'quit':
                     break
-                if task._begin: task._begin.send()
+                self._currtask = task
+                if task._begin: task._begin()
                 while True:
                     try:
                         step = task.get()
@@ -168,15 +152,15 @@ class TaskWorker(object):
                             output = step.next()
                             task.emit(output)
                             while True:
-                                task.emit(step.send(task._continue))
-                        elif isinstance(step,
-                             (types.MethodType,types.FunctionType)):
-                            task.emit(step())
+                                output = step.send(True)
+                                task.emit(output)
+                        elif isinstance(step, (types.MethodType,types.FunctionType)):
+                            step()
                     except IndexError:
                         break
                     except StopIteration:
                         pass
-                if task._end: task._end.send()
+                if task._end: task._end()
                 ## task.close() will cause RuntimeError: 'generator ignored GeneratorExit'
                 ## See http://mail.python.org/pipermail/python-dev/2006-August/068429.html
             except Queue.Empty:
@@ -192,17 +176,14 @@ class TaskHandler(QObject):
         for func in funcs:
             self.sig.connect(func)
 
-    def send(self, output=TaskOutput('')):
+    def send(self, output):
         self.sig.emit(output)
 
 class CommandTerminated(Exception):
     pass
 
-def CmdTask(args=[], workdir=None):
-    currdir = None
-    if workdir:
-        currdir = os.getcwdu()
-        os.chdir(workdir)
+def CmdTask(*args):
+    (yield TaskOutput(u'ENTER', OutputType.NOTIFY))
     popen_args = {
         'args': args,
         'stdout': PIPE,
@@ -226,9 +207,8 @@ def CmdTask(args=[], workdir=None):
         errmsg = p.stderr.read()
         if len(errmsg) > 0:
             raise Exception(errmsg)
-        (yield TaskOutput(u'END: %s ...' % args[0]))
+        (yield TaskOutput(u'END: %s' % args[0]))
     except CommandTerminated:
-        code = -2
         (yield TaskOutput(u'TERMINITED: %s' % args[0], OutputType.WARN))
         try:
             p.terminate()
@@ -238,8 +218,50 @@ def CmdTask(args=[], workdir=None):
         code = -1
         (yield TaskOutput(ex.message, OutputType.ERROR))
     finally:
-        if currdir:
-            os.chdir(currdir)
+        (yield TaskOutput(u'EXIT %d' % code, OutputType.NOTIFY))
+
+
+def CmdTask2(workdir, *args):
+    (yield TaskOutput(u'ENTER', OutputType.NOTIFY))
+    currdir = os.getcwdu()
+    os.chdir(workdir)
+    print workdir
+    popen_args = {
+        'args': args,
+        'stdout': PIPE,
+        'stderr': PIPE,
+        }
+    if os.name != 'posix':
+        popen_args['shell'] = True
+    code = 0
+    p = None
+    try:
+        p = Popen(**popen_args)
+        cmdline = ' '.join(args)
+        #print cmdline
+        (yield TaskOutput(u'START: %s ...' % cmdline))
+        running = True
+        while True:
+            line = p.stdout.readline()
+            if line == "":
+                break
+            if not (yield TaskOutput(line.rstrip(), OutputType.OUTPUT)):
+                raise CommandTerminated()
+        errmsg = p.stderr.read()
+        if len(errmsg) > 0:
+            raise Exception(errmsg)
+        (yield TaskOutput(u'END: %s' % args[0]))
+    except CommandTerminated:
+        (yield TaskOutput(u'TERMINITED: %s' % args[0], OutputType.WARN))
+        try:
+            p.terminate()
+            p.wait()
+        except: pass
+    except Exception as ex:
+        code = -1
+        (yield TaskOutput(ex.message, OutputType.ERROR))
+    finally:
+        os.chdir(currdir)
         (yield TaskOutput(u'EXIT %d' % code, OutputType.NOTIFY))
 
 
@@ -253,9 +275,9 @@ if __name__ == "__main__":
         print output.output
 
     #hdlr = MyHandler()
-    task = Task(CmdTask(["dir", "D:\\temp\\msys"]))
+    task = Task(CmdTask("dir", "D:\\temp\\msys"))
     task.init(begin, end, TaskHandler(hdlr))
-    task.put(CmdTask(["dir", "C:\\tmp"]))
+    task.put(CmdTask("dir", "C:\\tmp"))
     worker = TaskWorker()
     worker.add_task(task)
     #while True:
